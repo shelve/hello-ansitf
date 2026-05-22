@@ -1,0 +1,41 @@
+---
+- name: Bootstrap pytfe into the execution environment
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: true
+
+  tasks:
+    - name: Skip if operator has disabled runtime pytfe install
+      ansible.builtin.meta: end_play
+      when: not (install_pytfe_at_runtime | default(true) | bool)
+
+    - name: Show Ansible playbook Python
+      ansible.builtin.debug:
+        msg:
+          ansible_playbook_python: "{{ ansible_playbook_python }}"
+          ansible_python_interpreter: "{{ ansible_python_interpreter | default('not set') }}"
+
+    - name: Check if pytfe is already available to /usr/bin/python3.12
+      ansible.builtin.command:
+        cmd: /usr/bin/python3.12 -c "import pytfe; print(pytfe.__file__)"
+      register: pytfe_check_before
+      changed_when: false
+      failed_when: false
+
+    - name: Install pytfe using controller/module Python
+      ansible.builtin.command:
+        cmd: /usr/bin/python3.12 -m pip install "pytfe{{ pytfe_version | default('>=0.1.5') }}"
+      register: pytfe_install
+      changed_when: "'Requirement already satisfied' not in pytfe_install.stdout"
+      when: pytfe_check_before.rc != 0
+
+    - name: Verify pytfe import after install
+      ansible.builtin.command:
+        cmd: /usr/bin/python3.12 -c "import sys, pytfe; print(sys.executable); print(pytfe.__file__)"
+      register: pytfe_check_after
+      changed_when: false
+
+    - name: Show pytfe verification
+      ansible.builtin.debug:
+        var: pytfe_check_after.stdout_lines

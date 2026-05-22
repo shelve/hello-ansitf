@@ -1,40 +1,6 @@
 ---
 # bootstrap_pytfe.yml
-#
-# Two-play runtime bootstrap, imported at the top of every workflow playbook.
-#
-#   1. PLAY ONE — pip-install the `pytfe` SDK into the EE's Python.
-#      Every module in hashicorp.terraform v2.0.0 imports pytfe at module
-#      load time. The stock AAP "Default execution environment" doesn't
-#      bundle it, so without this the first task fails with
-#      `ModuleNotFoundError: pytfe`.
-#      Toggle with `install_pytfe_at_runtime` (default: true).
-#
-#   2. PLAY TWO — OPTIONAL override of the installed collection with one
-#      built from a Git ref (branch / tag / SHA). Use this to validate the
-#      upcoming 2.1.0 release branch BEFORE bumping
-#      collections/requirements.yml and re-syncing the AAP Project.
-#      Off by default. Activate by passing `-e collection_git_ref=<ref>`.
-#
-# WHY a runtime override instead of pinning the git URL in
-# collections/requirements.yml?
-#   * Project sync in AAP is shared across every Job Template that uses the
-#     Project — pinning a branch there flips the version for everyone.
-#   * The runtime path is opt-in per job (set the var in extra_vars or a
-#     survey), so you can run a single Job Template against an experimental
-#     branch while everybody else keeps the released 2.0.0.
-#   * Mirrors how `pip install pytfe` is handled — same pattern, same
-#     mental model, same opt-out switch.
-#
-# WHY we should remove BOTH plays in a real EE:
-#   Build a custom EE with ansible-builder that bakes in pytfe AND the
-#   pinned collection at image build time, then set both
-#   `install_pytfe_at_runtime: false` and `collection_git_ref: ''`. The
-#   plays become no-ops and you save the per-job network round-trips.
 
-# ---------------------------------------------------------------------------
-# PLAY 1 — install pytfe into the EE
-# ---------------------------------------------------------------------------
 - name: Bootstrap pytfe into the execution environment
   hosts: localhost
   gather_facts: false

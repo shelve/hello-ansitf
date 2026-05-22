@@ -11,7 +11,7 @@
 # cloud region, and a Slack webhook.
 
 - name: Bootstrap pytfe (no-op if already present)
-  import_playbook: bootstrap_pytfe.yml
+  import_playbook: bootstrap_pytfe_new.yml
 
 - name: Workspace onboarding - one-shot baseline
   hosts: localhost
@@ -22,7 +22,7 @@
     new_workspace: "{{ new_workspace | mandatory }}"
     environment_tag: "{{ environment_tag | default('nonprod') }}"
     region: "{{ region | default('us-east-1') }}"
-    
+
   tasks:
     - name: Resolve the project ID we want the workspace to live in
       hashicorp.terraform.project_info:
