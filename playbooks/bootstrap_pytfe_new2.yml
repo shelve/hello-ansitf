@@ -1,0 +1,18 @@
+---
+- name: Bootstrap pytfe into the execution environment
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: true
+
+  tasks:
+    - name: Install pytfe using pip for Python 3.12
+      ansible.builtin.pip:
+        name: "pytfe{{ pytfe_version | default('>=0.1.5') }}"
+        state: present
+        executable: /usr/bin/pip3.12
+
+    - name: Verify pytfe import
+      ansible.builtin.command:
+        cmd: /usr/bin/python3.12 -c "import sys, pytfe; print(sys.executable); print(pytfe.__file__)"
+      changed_when: false

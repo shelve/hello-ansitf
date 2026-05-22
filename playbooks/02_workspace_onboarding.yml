@@ -11,7 +11,7 @@
 # cloud region, and a Slack webhook.
 
 - name: Bootstrap pytfe (no-op if already present)
-  import_playbook: bootstrap_pytfe_new.yml
+  import_playbook: bootstrap_pytfe_new2.yml
 
 - name: Workspace onboarding - one-shot baseline
   hosts: localhost
