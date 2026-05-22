@@ -2,18 +2,24 @@
 # Collections used by this repo.
 #
 # hashicorp.terraform is a Red Hat *Partner Collection* — it lives on
-# Red Hat Automation Hub, NOT on the public Ansible Galaxy. Installation
-# therefore requires:
+# Red Hat Automation Hub, NOT on the public Ansible Galaxy. The default
+# install path in this repo is the PRIVATE Automation Hub bundled with
+# AAP 2.6 (synced from Red Hat Cloud into the rh-certified repository).
 #
-#   LOCAL CLI: ansible.cfg in the repo root configures the `published`
-#              Galaxy server pointing at console.redhat.com. You must add
-#              your offline token (see comments in ansible.cfg). Then:
+#   LOCAL CLI: ansible.cfg in the repo root configures the `rh_certified`
+#              Galaxy server pointing at your Private Hub. You must add
+#              your Hub token (see comments in ansible.cfg). Then:
 #                ansible-galaxy collection install -r collections/requirements.yml
 #
 #   AAP:       Attach an "Ansible Galaxy/Automation Hub API Token"
-#              Credential to the Project. AAP processes this file at
-#              Project-sync time using that credential. See
-#              docs/02-aap-integration.md.
+#              Credential to the Project, with the URL set to your
+#              Private Hub's rh-certified repo. AAP processes this file
+#              at Project-sync time using that credential. See
+#              docs/02-aap-integration.md Step 3.
+#
+#   ALT (SaaS): If you don't have a Private Hub, install from
+#              console.redhat.com — see the commented `console_rh` block
+#              at the bottom of ansible.cfg.
 #
 # Bump the version below when 2.1.0 ships and re-sync the AAP Project.
 #
@@ -27,12 +33,14 @@
 collections:
   - name: hashicorp.terraform
     version: "2.0.0"
-    # `source:` is intentionally omitted — ansible-galaxy will use the
-    # `published` server defined in ansible.cfg (Automation Hub).
+    # `source:` is intentionally omitted — ansible-galaxy walks the
+    # server_list in ansible.cfg ([rh_certified, galaxy_public]) until one
+    # responds with the requested collection. Private Hub answers first.
 
-  # Public-Galaxy supporting collections — these install from the default
-  # public Galaxy because they specify a source explicitly. Keeping them
-  # explicit avoids confusion when running with `server_list = published`.
+  # Public-Galaxy supporting collections — ansible-galaxy will find these on
+  # `galaxy_public` (second in the server_list). We can leave the source
+  # implicit, but pinning it explicitly here keeps the requirements file
+  # readable as documentation of intent.
   - name: ansible.utils
     source: https://galaxy.ansible.com
 
