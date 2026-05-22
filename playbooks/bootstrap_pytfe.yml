@@ -1,0 +1,128 @@
+---
+# bootstrap_pytfe.yml
+#
+# Two-play runtime bootstrap, imported at the top of every workflow playbook.
+#
+#   1. PLAY ONE — pip-install the `pytfe` SDK into the EE's Python.
+#      Every module in hashicorp.terraform v2.0.0 imports pytfe at module
+#      load time. The stock AAP "Default execution environment" doesn't
+#      bundle it, so without this the first task fails with
+#      `ModuleNotFoundError: pytfe`.
+#      Toggle with `install_pytfe_at_runtime` (default: true).
+#
+#   2. PLAY TWO — OPTIONAL override of the installed collection with one
+#      built from a Git ref (branch / tag / SHA). Use this to validate the
+#      upcoming 2.1.0 release branch BEFORE bumping
+#      collections/requirements.yml and re-syncing the AAP Project.
+#      Off by default. Activate by passing `-e collection_git_ref=<ref>`.
+#
+# WHY a runtime override instead of pinning the git URL in
+# collections/requirements.yml?
+#   * Project sync in AAP is shared across every Job Template that uses the
+#     Project — pinning a branch there flips the version for everyone.
+#   * The runtime path is opt-in per job (set the var in extra_vars or a
+#     survey), so you can run a single Job Template against an experimental
+#     branch while everybody else keeps the released 2.0.0.
+#   * Mirrors how `pip install pytfe` is handled — same pattern, same
+#     mental model, same opt-out switch.
+#
+# WHY we should remove BOTH plays in a real EE:
+#   Build a custom EE with ansible-builder that bakes in pytfe AND the
+#   pinned collection at image build time, then set both
+#   `install_pytfe_at_runtime: false` and `collection_git_ref: ''`. The
+#   plays become no-ops and you save the per-job network round-trips.
+
+# ---------------------------------------------------------------------------
+# PLAY 1 — install pytfe into the EE
+# ---------------------------------------------------------------------------
+- name: Bootstrap pytfe into the execution environment
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Skip if operator has disabled runtime pytfe install
+      ansible.builtin.meta: end_play
+      when: not (install_pytfe_at_runtime | default(true) | bool)
+
+    - name: Install pytfe via pip into the EE's Python
+      # ansible.builtin.pip uses {{ ansible_python_interpreter }} by default,
+      # which on AAP resolves to the EE's bundled Python — exactly where the
+      # collection's modules will look for pytfe at import time.
+      ansible.builtin.pip:
+        name: "pytfe{{ pytfe_version | default('>=0.1.5') }}"
+        state: present
+        extra_args: "{{ pytfe_pip_extra_args | default('') }}"
+      register: pytfe_install
+
+    - name: Show pytfe install result
+      ansible.builtin.debug:
+        msg: "pytfe install: {{ pytfe_install.stdout_lines | default([pytfe_install.msg | default('already present')]) }}"
+
+# ---------------------------------------------------------------------------
+# PLAY 2 — (optional) override the collection with a git build
+# ---------------------------------------------------------------------------
+- name: Override hashicorp.terraform from a Git ref (optional)
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    # Git ref to install. EMPTY (default) = skip this play entirely. Pass a
+    # branch, tag, or commit SHA — e.g. `-e collection_git_ref=release-2.1`.
+    collection_git_ref: "{{ collection_git_ref | default('') }}"
+
+    # Source repo. Override for a fork or for SSH access.
+    #   https form: anonymous read, no key needed
+    #   git+ssh   : needs an SSH credential mounted into the EE
+    collection_git_url: >-
+      {{ collection_git_url | default('https://github.com/hashicorp/terraform-ansible-collection.git') }}
+
+    # FQCN we're installing — this is the collection's namespaced name.
+    # ansible-galaxy uses it only to validate the downloaded galaxy.yml
+    # matches what we asked for.
+    collection_fqcn: "hashicorp.terraform"
+
+    # Where the collection should land. Matches `collections_path` in
+    # ansible.cfg so subsequent plays pick it up automatically.
+    collection_install_path: "{{ playbook_dir }}/../collections"
+  tasks:
+    - name: Skip when no Git ref was requested
+      ansible.builtin.meta: end_play
+      when: collection_git_ref | length == 0
+
+    - name: Show what we're about to install
+      ansible.builtin.debug:
+        msg: >-
+          Installing {{ collection_fqcn }} from
+          {{ collection_git_url }}@{{ collection_git_ref }}
+          into {{ collection_install_path }}
+
+    - name: Ensure ansible-galaxy is available on PATH
+      ansible.builtin.command: ansible-galaxy --version
+      changed_when: false
+      register: galaxy_version
+
+    - name: Install the collection from Git (--force overwrites whatever Project sync placed)
+      # ansible-galaxy's git+ install syntax: `git+<url>,<ref>`. The ref may
+      # be a branch, tag, or commit SHA. `--force` is required so a previous
+      # 2.0.0 install (from Automation Hub at project-sync time) is
+      # replaced by this build.
+      ansible.builtin.command:
+        cmd: >-
+          ansible-galaxy collection install
+          git+{{ collection_git_url }},{{ collection_git_ref }}
+          --force
+          --collections-path {{ collection_install_path }}
+      register: collection_install
+      changed_when: "'was installed successfully' in collection_install.stdout"
+
+    - name: Confirm the installed collection version
+      ansible.builtin.command:
+        cmd: >-
+          ansible-galaxy collection list {{ collection_fqcn }}
+          --collections-path {{ collection_install_path }}
+      changed_when: false
+      register: installed_listing
+
+    - name: Show the override result
+      ansible.builtin.debug:
+        msg: "{{ installed_listing.stdout_lines }}"

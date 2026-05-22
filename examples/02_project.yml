@@ -1,0 +1,41 @@
+---
+# examples/02_project.yml
+#
+# Demonstrates `hashicorp.terraform.project` and `project_info`.
+# Projects group workspaces and let you set org-wide defaults in one place.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - create a TFC project and look it up
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Create or update the project
+      hashicorp.terraform.project:
+        organization: "{{ tfc_organization }}"
+        project: "{{ tfc_project }}"
+        description: "Created by AAP demo playbook"
+        default_execution_mode: remote
+        # Inactive workspaces inside this project get destroyed after 30d.
+        auto_destroy_activity_duration: "30d"
+        tag_bindings:
+          - { key: owner, value: platform }
+          - { key: env,   value: nonprod }
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+        tfe_address: "{{ tfe_address }}"
+      register: project_result
+
+    - name: Read it back via project_info
+      hashicorp.terraform.project_info:
+        organization: "{{ tfc_organization }}"
+        project: "{{ tfc_project }}"
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+        tfe_address: "{{ tfe_address }}"
+      register: project_info
+
+    - name: Show project ID (needed when assigning workspaces)
+      ansible.builtin.debug:
+        msg: "project_id = {{ project_info.project.id }}"

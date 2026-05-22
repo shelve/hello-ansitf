@@ -1,0 +1,36 @@
+---
+# examples/10_promote_run.yml
+#
+# Demonstrates `hashicorp.terraform.promote_run` (v2.0.0 action plugin).
+# Evaluates policy checks on a run, and applies it ONLY if all gates pass.
+# Returns a structured `gates` dict so the operator can see why it did or
+# didn't apply.
+#
+# Use this as the "apply" step in a multi-stage AAP workflow where the
+# preceding job created the plan.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - policy-gated apply
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    run_id: "{{ run_id | mandatory }}"
+  tasks:
+    - name: Promote the run if policies pass
+      hashicorp.terraform.promote_run:
+        run_id: "{{ run_id }}"
+        require_policy_pass: true
+        allow_advisory_failures: true
+        wait: true
+        timeout: 600
+        auto_apply_when_eligible: true
+        comment: "Promoted by AAP"
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: promote
+
+    - name: Show the gate decision
+      ansible.builtin.debug:
+        var: promote.gates

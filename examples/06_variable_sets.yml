@@ -1,0 +1,43 @@
+---
+# examples/06_variable_sets.yml
+#
+# Demonstrates `hashicorp.terraform.variable_sets` — manage var sets and
+# converge their attachments to workspaces / projects.
+#
+# Note: this module manages the SET (its metadata + attachments). Variables
+# inside the set are managed out-of-band — use the `variable` module against
+# a varset's special pseudo-workspace, or manage them in the TFC UI.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - manage a variable set
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Look up the workspaces we want to attach to
+      hashicorp.terraform.workspace_info:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ item }}"
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      loop:
+        - "{{ tfc_workspace }}"
+      register: ws_lookups
+
+    - name: Create / update the variable set and converge attachments
+      hashicorp.terraform.variable_sets:
+        organization: "{{ tfc_organization }}"
+        name: "shared-aws-credentials"
+        description: "Shared AWS creds for app workspaces"
+        global: false
+        priority: false
+        # Pass an empty list to DETACH from all workspaces.
+        workspace_ids: "{{ ws_lookups.results | map(attribute='workspace.id') | list }}"
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: vs
+
+    - name: Show variable-set ID for downstream tasks
+      ansible.builtin.debug:
+        msg: "variable_set_id = {{ vs.variable_set.id }}"

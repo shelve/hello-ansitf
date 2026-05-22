@@ -1,0 +1,40 @@
+---
+# Collections used by this repo.
+#
+# hashicorp.terraform is a Red Hat *Partner Collection* — it lives on
+# Red Hat Automation Hub, NOT on the public Ansible Galaxy. Installation
+# therefore requires:
+#
+#   LOCAL CLI: ansible.cfg in the repo root configures the `published`
+#              Galaxy server pointing at console.redhat.com. You must add
+#              your offline token (see comments in ansible.cfg). Then:
+#                ansible-galaxy collection install -r collections/requirements.yml
+#
+#   AAP:       Attach an "Ansible Galaxy/Automation Hub API Token"
+#              Credential to the Project. AAP processes this file at
+#              Project-sync time using that credential. See
+#              docs/02-aap-integration.md.
+#
+# Bump the version below when 2.1.0 ships and re-sync the AAP Project.
+#
+# RUNTIME OVERRIDE (test a pre-release branch without re-syncing the Project):
+#   Pass `-e collection_git_ref=<branch-or-tag>` (and optionally
+#   `-e collection_git_url=git+ssh://...`). The bootstrap playbook will
+#   `ansible-galaxy collection install git+<url>,<ref> --force` into
+#   ./collections, shadowing whatever the Project sync placed there. See
+#   docs/04-overriding-collection-from-git.md.
+
+collections:
+  - name: hashicorp.terraform
+    version: "2.0.0"
+    # `source:` is intentionally omitted — ansible-galaxy will use the
+    # `published` server defined in ansible.cfg (Automation Hub).
+
+  # Public-Galaxy supporting collections — these install from the default
+  # public Galaxy because they specify a source explicitly. Keeping them
+  # explicit avoids confusion when running with `server_list = published`.
+  - name: ansible.utils
+    source: https://galaxy.ansible.com
+
+  - name: community.general
+    source: https://galaxy.ansible.com

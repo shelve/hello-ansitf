@@ -1,0 +1,51 @@
+---
+# playbooks/09_drift_audit.yml
+#
+# WORKFLOW: "drift audit" — pulls run-event history for one or more
+# workspaces, identifies recent drift assessments + failed runs, and prints
+# a summary. Designed to be the body of a SCHEDULED AAP Job Template (e.g.
+# every morning).
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: bootstrap_pytfe.yml
+
+- name: Daily drift / failure audit
+  hosts: localhost
+  gather_facts: true
+  connection: local
+  vars:
+    audit_workspaces:
+      - "{{ tfc_workspace }}"
+    # Look back 24 hours by default.
+    since_iso: "{{ (ansible_date_time.epoch | int - 86400) | strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+  tasks:
+    - name: Get most recent run for each workspace
+      hashicorp.terraform.workspace_info:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ item }}"
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      loop: "{{ audit_workspaces }}"
+      register: workspace_lookups
+
+    - name: For each workspace, pull last 24h of run events
+      ansible.builtin.set_fact:
+        recent_events: >-
+          {{
+            recent_events | default({}) | combine({
+              item.item: lookup(
+                'hashicorp.terraform.tf_run_events',
+                run_id=item.workspace.attributes['current-run-id'] | default(''),
+                since=since_iso,
+                tfe_token=lookup('env','TFE_TOKEN'),
+                errors='ignore'
+              )
+            })
+          }}
+      loop: "{{ workspace_lookups.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.workspace.attributes['current-run-id'] is defined
+
+    - name: Print audit summary
+      ansible.builtin.debug:
+        var: recent_events

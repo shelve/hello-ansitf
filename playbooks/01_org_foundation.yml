@@ -1,0 +1,64 @@
+---
+# playbooks/01_org_foundation.yml
+#
+# WORKFLOW: "org foundation" — the very first thing a platform team runs in a
+# fresh TFC/TFE tenant. Creates the organization, a project, and a couple of
+# org-wide variable sets. Run-once-then-occasional. Designed to be a single
+# Job Template in AAP, or the first step of a "tenant onboarding" Workflow.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: bootstrap_pytfe.yml
+
+- name: Org foundation - org, project, shared variable sets
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    admin_email: "{{ admin_email | default('admin@example.com') }}"
+  tasks:
+    - name: Create / update the organization
+      hashicorp.terraform.organizations:
+        name: "{{ tfc_organization }}"
+        email: "{{ admin_email }}"
+        cost_estimation_enabled: true
+        default_execution_mode: remote
+        assessments_enforced: true
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+        tfe_address: "{{ tfe_address }}"
+
+    - name: Create / update the demo project
+      hashicorp.terraform.project:
+        organization: "{{ tfc_organization }}"
+        project: "{{ tfc_project }}"
+        description: "Provisioned by AAP — org foundation playbook"
+        default_execution_mode: remote
+        auto_destroy_activity_duration: "30d"
+        tag_bindings:
+          - { key: owner, value: platform }
+          - { key: env,   value: nonprod }
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+        tfe_address: "{{ tfe_address }}"
+
+    - name: Create / update the shared-cloud-creds variable set (global)
+      hashicorp.terraform.variable_sets:
+        organization: "{{ tfc_organization }}"
+        name: "shared-cloud-creds"
+        description: "Cloud-provider credentials shared across all workspaces."
+        global: true
+        priority: true
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+        tfe_address: "{{ tfe_address }}"
+
+    - name: Create / update the global-tags variable set (org-wide defaults)
+      hashicorp.terraform.variable_sets:
+        organization: "{{ tfc_organization }}"
+        name: "global-tags"
+        description: "Default tags applied to every resource."
+        global: true
+        priority: false
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+        tfe_address: "{{ tfe_address }}"

@@ -1,0 +1,13 @@
+---
+# Template for the encrypted vault file. Copy to group_vars/all/vault.yml and
+# encrypt with `ansible-vault encrypt group_vars/all/vault.yml`. In AAP, prefer
+# storing the token in a "HashiCorp Terraform / Cloud" or custom credential
+# rather than committing an encrypted file.
+#
+# NEVER commit the unencrypted form. The .gitignore already ignores any
+# *.unencrypted file as a guard.
+
+# Terraform Cloud / Enterprise API token.
+# Generate via: https://app.terraform.io/app/settings/tokens (user token), or
+# Organization Settings → API Tokens (team / org token).
+vault_tfe_token: "REPLACE_ME"

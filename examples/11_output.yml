@@ -1,0 +1,36 @@
+---
+# examples/11_output.yml
+#
+# Demonstrates `hashicorp.terraform.output` (module) AND the `tf_output`
+# lookup. The module is for fact-style usage in a play; the lookup is for
+# inline templating in vars / when conditions.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - read workspace outputs
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Get all outputs via the module
+      hashicorp.terraform.output:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+        display_sensitive: false
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: outs
+
+    - name: Print them
+      ansible.builtin.debug:
+        var: outs.outputs
+
+    - name: Get one specific output inline with the lookup plugin
+      ansible.builtin.debug:
+        msg: >-
+          ELB DNS is
+          {{ lookup('hashicorp.terraform.tf_output',
+                    workspace=tfc_workspace,
+                    organization=tfc_organization,
+                    name='elb_dns_name',
+                    tfe_token=lookup('env','TFE_TOKEN')) }}

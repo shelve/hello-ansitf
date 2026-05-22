@@ -1,0 +1,49 @@
+---
+# playbooks/07_promotion_pipeline.yml
+#
+# WORKFLOW: "dev → stage → prod promotion" — same TF config promoted through
+# environments via run triggers + policy gates.
+#
+# Best implemented as an AAP *Workflow Template* with one node per stage. This
+# playbook shows how a single stage looks and is suitable for re-use across
+# all three job templates by overriding `target_stage` and `source_stage`.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: bootstrap_pytfe.yml
+
+- name: Promote a single stage
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    target_stage: "{{ target_stage | mandatory }}"   # e.g. "aap-demo-app-stage"
+    source_stage: "{{ source_stage | default('') }}" # e.g. "aap-demo-app-dev"
+  tasks:
+    - name: Ensure the run-trigger from source → target exists
+      hashicorp.terraform.run_trigger:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ target_stage }}"
+        sourceable_workspace: "{{ source_stage }}"
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      when: source_stage | length > 0
+
+    - name: Trigger a plan on the target
+      hashicorp.terraform.run:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ target_stage }}"
+        run_message: "Promoting from {{ source_stage | default('manual') }}"
+        plan_only: true
+        poll: true
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: planned
+
+    - name: Policy-gate the apply
+      hashicorp.terraform.promote_run:
+        run_id: "{{ planned.run.id }}"
+        require_policy_pass: true
+        allow_advisory_failures: false  # stricter as we move toward prod
+        wait: true
+        auto_apply_when_eligible: true
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"

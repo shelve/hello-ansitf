@@ -1,0 +1,44 @@
+---
+# Non-secret defaults shared by every playbook in this repo.
+#
+# Override any of these per playbook with -e / --extra-vars, in an AAP survey,
+# in a Job Template's "extra variables" field, or via a more specific
+# group_vars / host_vars file.
+
+# ---------- TFC / TFE endpoint ----------
+# Default to public HCP Terraform. Override for a Terraform Enterprise install.
+tfe_address: "https://app.terraform.io"
+
+# ---------- Organization / project / workspace defaults ----------
+# These are placeholders the demo playbooks fall back to. Real values should
+# come from a survey or extra_vars in AAP.
+tfc_organization: "my-tfc-org"
+tfc_project: "aap-demo"
+tfc_workspace: "aap-demo-app"
+
+# ---------- Run behaviour ----------
+# How long playbooks should wait on plan/apply polling by default.
+run_poll_interval_seconds: 5
+run_poll_timeout_seconds: 600
+
+# ---------- Bootstrap pytfe ----------
+# Pip-install pytfe at the top of every play (see playbooks/bootstrap_pytfe.yml).
+# Turn off only if you maintain a custom Execution Environment that already
+# bakes pytfe in.
+install_pytfe_at_runtime: true
+pytfe_version: ">=0.1.5"
+
+# ---------- Optional: install hashicorp.terraform from a Git ref ----------
+# When `collection_git_ref` is non-empty, bootstrap_pytfe.yml's second play
+# runs `ansible-galaxy collection install git+<url>,<ref> --force` into
+# ./collections, shadowing whatever AAP Project sync placed there.
+#
+# Leave EMPTY to use whatever is pinned in collections/requirements.yml
+# (the normal path — installed from Automation Hub at AAP Project-sync time).
+#
+# Examples:
+#   collection_git_ref: "release-2.1"          # pre-release branch
+#   collection_git_ref: "2.0.0"                # exact tag (already pinned, useful only as a smoke test)
+#   collection_git_ref: "a1b2c3d4"             # specific commit SHA
+collection_git_ref: ""
+collection_git_url: "https://github.com/hashicorp/terraform-ansible-collection.git"

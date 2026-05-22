@@ -1,0 +1,40 @@
+---
+# examples/09_view_plan.yml
+#
+# Demonstrates `hashicorp.terraform.view_plan` — render the plan diff (or its
+# JSON) for a specific run. Useful for posting plan output into an approval
+# step, a ticket, or a chat notification.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - view a plan for a known run
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    # Pass on the CLI: -e run_id=run-XXXXXXXXXXXXXXXX
+    run_id: "{{ run_id | mandatory }}"
+  tasks:
+    - name: Get the diff (default)
+      hashicorp.terraform.view_plan:
+        run_id: "{{ run_id }}"
+        output_format: diff
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: plan_diff
+
+    - name: Print the diff
+      ansible.builtin.debug:
+        var: plan_diff.diff
+
+    - name: Also fetch the structured JSON plan (handy for policy gates)
+      hashicorp.terraform.view_plan:
+        run_id: "{{ run_id }}"
+        output_format: json
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: plan_json
+
+    - name: Save the JSON plan to disk for downstream tooling
+      ansible.builtin.copy:
+        content: "{{ plan_json.plan | to_nice_json }}"
+        dest: "/tmp/plan-{{ run_id }}.json"

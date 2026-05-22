@@ -1,0 +1,70 @@
+---
+# playbooks/03_plan_and_apply.yml
+#
+# WORKFLOW: "plan and apply" — uploads a Terraform configuration directory as
+# a new configuration version, triggers a run, optionally prints the diff,
+# and either auto-applies or stops at plan for human review.
+#
+# In AAP, split this into TWO Job Templates and chain them in a Workflow:
+#   1. plan job (plan_only: true)
+#   2. approval node
+#   3. apply job (uses promote_run on the saved run_id)
+# See docs/workflows/03-plan-apply.md.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: bootstrap_pytfe.yml
+
+- name: Plan and (optionally) apply a Terraform configuration
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    tf_config_dir: "{{ tf_config_dir | default(playbook_dir + '/../files/sample_tf_config') }}"
+    auto_apply: "{{ auto_apply | default(false) | bool }}"
+    print_diff: "{{ print_diff | default(true) | bool }}"
+  tasks:
+    - name: Upload directory as a new configuration version
+      hashicorp.terraform.configuration_version:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+        configuration_files_path: "{{ tf_config_dir }}"
+        auto_queue_runs: false
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: cv
+
+    - name: Kick off a plan
+      hashicorp.terraform.run:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+        configuration_version: "{{ cv.configuration_version.id }}"
+        run_message: "Plan from AAP — cv={{ cv.configuration_version.id }}"
+        plan_only: "{{ not auto_apply }}"
+        auto_apply: "{{ auto_apply }}"
+        poll: true
+        poll_interval: "{{ run_poll_interval_seconds }}"
+        poll_timeout: "{{ run_poll_timeout_seconds }}"
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: planned
+
+    - name: Render plan diff for the operator
+      hashicorp.terraform.view_plan:
+        run_id: "{{ planned.run.id }}"
+        output_format: diff
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: plan_diff
+      when: print_diff
+
+    - name: Show the diff
+      ansible.builtin.debug:
+        var: plan_diff.diff
+      when: print_diff
+
+    - name: Expose run_id so a downstream Workflow node can apply it
+      ansible.builtin.set_stats:
+        data:
+          # Anything in `data` is available to subsequent AAP Workflow nodes
+          # as a top-level variable when "Variables from workflow" is enabled.
+          tfc_run_id: "{{ planned.run.id }}"
+          tfc_configuration_version_id: "{{ cv.configuration_version.id }}"

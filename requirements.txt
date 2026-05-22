@@ -1,0 +1,11 @@
+# Python dependencies for the hashicorp.terraform collection.
+#
+# AAP / awx-ee will install this file into the execution environment's Python
+# at project-sync time IF the EE's image was built with `ansible-builder` and
+# was told to consume this file. Because this repo intentionally does NOT ship
+# a custom EE, we ALSO install pytfe at runtime via playbooks/bootstrap_pytfe.yml
+# so plays succeed on the default `Default execution environment` shipped with
+# AAP 2.6.
+#
+# See docs/02-aap-integration.md for the full story.
+pytfe>=0.1.5

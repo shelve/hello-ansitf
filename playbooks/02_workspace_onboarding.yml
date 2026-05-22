@@ -1,0 +1,80 @@
+---
+# playbooks/02_workspace_onboarding.yml
+#
+# WORKFLOW: "workspace onboarding" — what an application team's AAP Job
+# Template runs when they want a brand-new workspace. Uses the high-level
+# `workspace_bootstrap` action so the whole baseline (workspace settings,
+# variables, var-set attachments, run triggers, notifications) converges in
+# a single idempotent task.
+#
+# Drive it from an AAP survey: prompt for workspace name, environment tag,
+# cloud region, and a Slack webhook.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: bootstrap_pytfe.yml
+
+- name: Workspace onboarding - one-shot baseline
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    # These would come from an AAP survey in production.
+    new_workspace: "{{ new_workspace | mandatory }}"
+    environment_tag: "{{ environment_tag | default('nonprod') }}"
+    region: "{{ region | default('us-east-1') }}"
+    slack_webhook_url: "{{ slack_webhook_url | default('') }}"
+  tasks:
+    - name: Resolve the project ID we want the workspace to live in
+      hashicorp.terraform.project_info:
+        organization: "{{ tfc_organization }}"
+        project: "{{ tfc_project }}"
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: proj
+
+    # Step 1: create the workspace shell inside the right project.
+    - name: Create / update the workspace shell
+      hashicorp.terraform.workspace:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ new_workspace }}"
+        project_id: "{{ proj.project.id }}"
+        description: "Onboarded by AAP for env={{ environment_tag }}"
+        terraform_version: "1.9.5"
+        execution_mode: remote
+        auto_apply: false
+        allow_destroy_plan: true
+        assessments_enabled: true
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+
+    # Step 2: converge variables, var-set attachments, notifications.
+    - name: Converge full workspace baseline
+      hashicorp.terraform.workspace_bootstrap:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ new_workspace }}"
+
+        variables:
+          - { key: region, value: "{{ region }}", category: terraform }
+          - { key: environment, value: "{{ environment_tag }}", category: terraform }
+
+        variable_sets:
+          - name: "shared-cloud-creds"
+          - name: "global-tags"
+
+        notifications: >-
+          {{
+            [{
+              'name': 'slack-platform',
+              'destination_type': 'slack',
+              'url': slack_webhook_url,
+              'triggers': ['run:needs_attention','run:errored','run:completed'],
+              'enabled': true
+            }] if slack_webhook_url else []
+          }}
+
+        reconcile: true
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: bootstrap
+
+    - name: Show what changed
+      ansible.builtin.debug:
+        var: bootstrap

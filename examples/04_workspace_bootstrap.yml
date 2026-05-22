@@ -1,0 +1,79 @@
+---
+# examples/04_workspace_bootstrap.yml
+#
+# Demonstrates the v2.0.0 `workspace_bootstrap` action plugin — the
+# "everything in one task" path for day-0 workspace setup. Reconciles:
+#   * workspace settings
+#   * workspace-scoped variables (incl. sensitive + env)
+#   * variable-set attachments
+#   * inbound run triggers
+#   * notification configurations
+#
+# Re-running with the same inputs is a no-op.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - one-shot workspace bootstrap
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Converge the workspace baseline
+      hashicorp.terraform.workspace_bootstrap:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+
+        settings:
+          description: "Bootstrapped by AAP"
+          terraform_version: "1.9.5"
+          execution_mode: remote
+          auto_apply: false
+
+        variables:
+          - key: region
+            value: "us-east-1"
+            category: terraform
+          - key: instance_type
+            value: "t3.micro"
+            category: terraform
+          - key: AWS_ACCESS_KEY_ID
+            value: "{{ aws_access_key_id }}"
+            category: env
+            sensitive: true
+          - key: AWS_SECRET_ACCESS_KEY
+            value: "{{ aws_secret_access_key }}"
+            category: env
+            sensitive: true
+
+        # Variable sets to attach (by ID or by name).
+        variable_sets:
+          - name: "shared-aws-credentials"
+          - name: "global-tags"
+
+        # Inbound run triggers — runs in the listed source workspaces fire a
+        # run here when they succeed.
+        run_triggers:
+          - sourceable_id: "ws-AAAAAAAAAAAAAAAA"
+
+        notifications:
+          - name: slack-platform
+            destination_type: slack
+            url: "{{ slack_webhook_url }}"
+            triggers:
+              - "run:needs_attention"
+              - "run:errored"
+              - "run:completed"
+
+        # When true (default), strip vars/triggers/notifications that exist
+        # on the workspace but aren't in the desired state above. Set false
+        # to make this purely additive.
+        reconcile: true
+
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+        tfe_address: "{{ tfe_address }}"
+      register: bootstrap_result
+
+    - name: Show per-component change summary
+      ansible.builtin.debug:
+        var: bootstrap_result

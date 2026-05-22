@@ -1,0 +1,59 @@
+---
+# examples/03_workspace.yml
+#
+# Demonstrates `hashicorp.terraform.workspace` and `workspace_info`. Shows
+# create / update / lock / unlock / delete state transitions individually so
+# you can see what each flag does without the higher-level `workspace_bootstrap`
+# hiding the details.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - workspace lifecycle
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    common_auth: &auth
+      tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      tfe_address: "{{ tfe_address }}"
+  tasks:
+    - name: Create / update the workspace
+      hashicorp.terraform.workspace:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+        description: "Demo workspace managed by AAP"
+        terraform_version: "1.9.5"
+        execution_mode: remote
+        auto_apply: false
+        allow_destroy_plan: true
+        assessments_enabled: true
+        state: present
+        <<: *auth
+      register: ws
+
+    - name: Look the workspace up by name
+      hashicorp.terraform.workspace_info:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+        <<: *auth
+      register: ws_info
+
+    - name: Show the resolved workspace ID
+      ansible.builtin.debug:
+        msg: "workspace_id = {{ ws_info.workspace.id }}"
+
+    # Lock & unlock are first-class state transitions — handy during a
+    # production freeze window driven from an AAP workflow.
+    - name: Lock the workspace
+      hashicorp.terraform.workspace:
+        workspace_id: "{{ ws_info.workspace.id }}"
+        state: locked
+        lock_reason: "Change freeze – AAP demo"
+        <<: *auth
+
+    - name: Unlock the workspace
+      hashicorp.terraform.workspace:
+        workspace_id: "{{ ws_info.workspace.id }}"
+        state: unlocked
+        <<: *auth

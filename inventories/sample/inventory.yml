@@ -1,0 +1,11 @@
+---
+# Static inventory used as the default target for plays that don't touch
+# managed hosts — most of the hashicorp.terraform module calls run on
+# localhost and only talk to the TFC/TFE API. Keep `hosts: localhost` and
+# `connection: local` in those playbooks; this file just gives Ansible a
+# valid inventory to load.
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "{{ ansible_playbook_python }}"

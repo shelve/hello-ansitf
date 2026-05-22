@@ -1,0 +1,36 @@
+---
+# playbooks/04_policy_gated_apply.yml
+#
+# WORKFLOW: "policy-gated apply" — the second half of the plan/apply pipeline.
+# Takes a run_id (typically set by the plan job via set_stats), waits for it
+# to be appliable, evaluates its policy checks, and applies only if all
+# gates pass.
+#
+# Wire as the apply Job Template after an approval node in an AAP Workflow.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: bootstrap_pytfe.yml
+
+- name: Policy-gated apply
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    # Accept run_id from -e, from a Workflow `set_stats`, or a survey.
+    run_id: "{{ tfc_run_id | default(run_id) | mandatory }}"
+  tasks:
+    - name: Apply iff every mandatory policy passed
+      hashicorp.terraform.promote_run:
+        run_id: "{{ run_id }}"
+        require_policy_pass: true
+        allow_advisory_failures: true
+        wait: true
+        timeout: 900
+        auto_apply_when_eligible: true
+        comment: "Promoted by AAP gating job"
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: gate
+
+    - name: Surface the decision (incl. why it didn't apply)
+      ansible.builtin.debug:
+        var: gate.gates

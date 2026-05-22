@@ -1,0 +1,42 @@
+---
+# examples/08_run.yml
+#
+# Demonstrates `hashicorp.terraform.run` and `run_info`. Creates a plan-only
+# run, then (separately) applies it. Shows the four states: present /
+# applied / discarded / canceled.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - kick off a plan, then apply or discard
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Create a plan-only run on the workspace
+      hashicorp.terraform.run:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+        run_message: "Triggered by AAP demo"
+        plan_only: true
+        poll: true
+        poll_interval: "{{ run_poll_interval_seconds }}"
+        poll_timeout: "{{ run_poll_timeout_seconds }}"
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: planned_run
+
+    - name: Show plan status
+      ansible.builtin.debug:
+        msg: "run {{ planned_run.run.id }} → {{ planned_run.run.attributes.status }}"
+
+    # In a real workflow this is where a separate "approval" job lives.
+    - name: Apply the run (only if the plan was successful and not plan-only-finished)
+      hashicorp.terraform.run:
+        run_id: "{{ planned_run.run.id }}"
+        state: applied
+        poll: true
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      when:
+        - planned_run.run.attributes.status == "planned"
+        - not (plan_only_demo | default(true))

@@ -1,0 +1,23 @@
+---
+# examples/14_ssh_keys.yml
+#
+# Demonstrates `hashicorp.terraform.ssh_keys` — register an SSH private key
+# at the organization level so workspaces can clone private Git modules.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - manage an organization SSH key
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Register / rotate the SSH key for private module repos
+      hashicorp.terraform.ssh_keys:
+        organization: "{{ tfc_organization }}"
+        name: "private-modules"
+        # In AAP, pull this from a Machine credential's `ssh_key_data` field
+        # via the credential injector. Never commit it.
+        value: "{{ private_ssh_key_pem }}"
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"

@@ -1,0 +1,36 @@
+---
+# examples/01_organization.yml
+#
+# Demonstrates `hashicorp.terraform.organizations` — manage a TFC/TFE org.
+# Org admins use this to stamp out new tenants from AAP.
+#
+# Run:  ansible-playbook examples/01_organization.yml \
+#         -e tfc_org_name=demo-org -e tfc_org_email=admin@example.com
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - manage a TFC/TFE organization
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    tfc_org_name: "{{ tfc_organization }}"
+    tfc_org_email: "admin@example.com"
+  tasks:
+    - name: Create or update the organization
+      hashicorp.terraform.organizations:
+        name: "{{ tfc_org_name }}"
+        email: "{{ tfc_org_email }}"
+        cost_estimation_enabled: true
+        default_execution_mode: remote
+        assessments_enforced: true
+        collaborator_auth_policy: two_factor_mandatory
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+        tfe_address: "{{ tfe_address }}"
+      register: org_result
+
+    - name: Show what changed
+      ansible.builtin.debug:
+        var: org_result

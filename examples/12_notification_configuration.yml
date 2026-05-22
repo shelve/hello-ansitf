@@ -1,0 +1,43 @@
+---
+# examples/12_notification_configuration.yml
+#
+# Demonstrates `hashicorp.terraform.notification_configuration` — wire a
+# workspace to Slack, Teams, generic webhook, or email.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - configure run notifications on a workspace
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Slack notification for runs that need attention or fail
+      hashicorp.terraform.notification_configuration:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+        name: "slack-platform"
+        destination_type: slack
+        url: "{{ slack_webhook_url }}"
+        enabled: true
+        triggers:
+          - "run:needs_attention"
+          - "run:errored"
+          - "run:completed"
+          - "assessment:drifted"
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+
+    - name: Email notification for the on-call list
+      hashicorp.terraform.notification_configuration:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+        name: "email-oncall"
+        destination_type: email
+        enabled: true
+        triggers:
+          - "run:errored"
+        email_addresses:
+          - oncall@example.com
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"

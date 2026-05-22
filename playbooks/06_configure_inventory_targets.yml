@@ -1,0 +1,41 @@
+---
+# playbooks/06_configure_inventory_targets.yml
+#
+# WORKFLOW: "configure managed hosts from Terraform inventory" — the classic
+# Ansible-after-Terraform handoff. Reads hosts from one of the dynamic
+# inventories (statefile or outputs) and runs configuration management
+# against them.
+#
+# Run:
+#   ansible-playbook \
+#     -i inventories/tfc_outputs/tfc_inventory.yml \
+#     playbooks/06_configure_inventory_targets.yml
+#
+# In AAP, attach the inventory file via an "Inventory Source: Sourced from
+# Project" and reference it from this Job Template.
+
+- name: Sanity-check the dynamic inventory
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Show every group the inventory plugin built
+      ansible.builtin.debug:
+        var: groups
+
+# This is the *real* part of the play — runs against the hosts surfaced by
+# the dynamic inventory.
+- name: Configure web servers discovered from Terraform output
+  hosts: env_demo:&role_web
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Ensure nginx is installed
+      ansible.builtin.package:
+        name: nginx
+        state: present
+
+    - name: Drop a marker file proving the playbook ran
+      ansible.builtin.copy:
+        content: "Configured by AAP via Terraform-sourced inventory at {{ ansible_date_time.iso8601 }}\n"
+        dest: /etc/aap-demo-marker

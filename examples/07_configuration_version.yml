@@ -1,0 +1,33 @@
+---
+# examples/07_configuration_version.yml
+#
+# Demonstrates `hashicorp.terraform.configuration_version` — upload a folder
+# (or tarball) of Terraform .tf files as a new configuration version, which
+# TFC will then plan against.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - upload a configuration version
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    # Use the sample Terraform config we ship in files/.
+    tf_config_dir: "{{ playbook_dir }}/../files/sample_tf_config"
+  tasks:
+    - name: Upload directory as a new configuration version
+      hashicorp.terraform.configuration_version:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+        configuration_files_path: "{{ tf_config_dir }}"
+        # Don't auto-queue a run — we'll use the `run` module so we control
+        # flags like is_destroy / target_addrs / poll explicitly.
+        auto_queue_runs: false
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: cv
+
+    - name: Show the configuration version ID
+      ansible.builtin.debug:
+        msg: "cv_id = {{ cv.configuration_version.id }}"

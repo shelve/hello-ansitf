@@ -1,0 +1,25 @@
+---
+# examples/13_run_trigger.yml
+#
+# Demonstrates `hashicorp.terraform.run_trigger` — wire one workspace's
+# successful runs to fire a run in another (e.g. networking → app).
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - cross-workspace run trigger
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    # The trigger fires a run in TARGET when SOURCE succeeds.
+    target_workspace: "{{ tfc_workspace }}"          # "aap-demo-app"
+    source_workspace: "aap-demo-network"
+  tasks:
+    - name: Ensure the trigger exists
+      hashicorp.terraform.run_trigger:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ target_workspace }}"
+        sourceable_workspace: "{{ source_workspace }}"
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"

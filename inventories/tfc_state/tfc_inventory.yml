@@ -1,0 +1,56 @@
+---
+# Dynamic inventory built from a Terraform Cloud / Enterprise workspace's
+# *state file*. The plugin reads `resources[]` from the latest state version,
+# filters by provider + resource type, and emits one host per matching
+# resource instance.
+#
+# To use:
+#   ansible-inventory -i inventories/tfc_state/tfc_inventory.yml --graph
+#   ansible-playbook  -i inventories/tfc_state/tfc_inventory.yml playbooks/configure_inventory_targets.yml
+#
+# In AAP: attach this inventory file via an Inventory Source of type
+# "Sourced from a Project", pointing at this path. See docs/02-aap-integration.md.
+#
+# Credentials: set TFE_TOKEN in the environment (AAP custom credential injects
+# it for you). The plugin will also read `tfe_token` if defined here, but DO
+# NOT commit a real token.
+
+plugin: hashicorp.terraform.tfc_inv
+source: statefile
+
+# Either (organization + workspace) OR workspace_id. organization/workspace is
+# more readable in source control; workspace_id is stabler if a workspace gets
+# renamed.
+organization: my-tfc-org
+workspace: aap-demo-app
+# workspace_id: ws-XXXXXXXXXXXXXXXX
+
+# tfe_address: https://app.terraform.io   # uncomment for TFE on-prem.
+
+# Pull resources defined inside child modules (defaults to root-only).
+search_child_modules: true
+
+# Add more provider mappings for resources the built-in AWS/Azure/GCP set
+# doesn't cover. Example below registers DigitalOcean droplets.
+provider_mapping:
+  - provider_name: registry.terraform.io/digitalocean/digitalocean
+    types:
+      - digitalocean_droplet
+
+# constructed-compatible options: build groups / vars / hostnames from the
+# host's attributes (which are the Terraform resource's attribute values).
+compose:
+  # Most cloud-instance resources expose a public IP attribute under this name
+  # in the state file; tweak per provider.
+  ansible_host: public_ip | default(public_dns) | default(private_ip)
+  ansible_user: "'ec2-user'"
+
+keyed_groups:
+  - key: tags.Environment | default('untagged')
+    prefix: env
+  - key: tags.Role | default('untagged')
+    prefix: role
+
+groups:
+  webservers: "'web' in (tags.Role | default(''))"
+  databases: "'db'  in (tags.Role | default(''))"

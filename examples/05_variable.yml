@@ -1,0 +1,38 @@
+---
+# examples/05_variable.yml
+#
+# Demonstrates `hashicorp.terraform.variable` — create / update / delete a
+# single workspace-scoped variable. Use `workspace_bootstrap` when you want
+# to manage many at once; use this when you only need one (e.g. rotating an
+# API key from a credential-vault job).
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - manage a single workspace variable
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Set a plain Terraform input variable
+      hashicorp.terraform.variable:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+        key: "region"
+        value: "us-east-1"
+        category: terraform
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+
+    - name: Set a sensitive environment variable
+      hashicorp.terraform.variable:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ tfc_workspace }}"
+        key: "AWS_SECRET_ACCESS_KEY"
+        # In AAP, pull this from a credential rather than committing it.
+        value: "{{ aws_secret_access_key }}"
+        category: env
+        sensitive: true
+        description: "Rotated by AAP on {{ ansible_date_time.iso8601 | default('today') }}"
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"

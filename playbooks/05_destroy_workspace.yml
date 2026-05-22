@@ -1,0 +1,43 @@
+---
+# playbooks/05_destroy_workspace.yml
+#
+# WORKFLOW: "destroy workspace" — runs a destroy plan, applies it, then
+# deletes the workspace shell. Safe-by-default: refuses to delete the
+# workspace if it still manages resources, unless `force: true` is set.
+#
+# Useful as a "tear down PR environment" Job Template.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: bootstrap_pytfe.yml
+
+- name: Tear a workspace down cleanly
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    target_workspace: "{{ target_workspace | mandatory }}"
+    force_delete: "{{ force_delete | default(false) | bool }}"
+  tasks:
+    - name: Resolve workspace ID
+      hashicorp.terraform.workspace_info:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ target_workspace }}"
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: ws
+
+    - name: Kick off and apply a destroy run
+      hashicorp.terraform.run:
+        workspace_id: "{{ ws.workspace.id }}"
+        is_destroy: true
+        auto_apply: true
+        poll: true
+        poll_timeout: 1800
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+
+    - name: Delete the (now empty) workspace
+      hashicorp.terraform.workspace:
+        workspace_id: "{{ ws.workspace.id }}"
+        state: absent
+        force: "{{ force_delete }}"
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"

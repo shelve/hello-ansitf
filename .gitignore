@@ -1,0 +1,24 @@
+# Collection install location (we rely on AAP / ansible-galaxy to populate it).
+collections/ansible_collections/
+
+# Local Python virtualenvs.
+.venv/
+venv/
+
+# Vault files that should NOT be committed (real secrets).
+group_vars/all/vault.yml.unencrypted
+
+# Local-only inventory overrides.
+inventories/local/
+
+# Cache, logs, editor files.
+*.pyc
+__pycache__/
+*.retry
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Ansible build artifacts.
+*.tar.gz

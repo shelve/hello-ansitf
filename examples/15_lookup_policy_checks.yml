@@ -1,0 +1,41 @@
+---
+# examples/15_lookup_policy_checks.yml
+#
+# Demonstrates the `tf_policy_checks` and `tf_run_events` lookups — useful
+# when you want to make decisions in a play based on policy outcome or the
+# timeline of a run (e.g. for incident postmortems).
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - inspect a run's policy + event history
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    run_id: "{{ run_id | mandatory }}"
+  tasks:
+    - name: Fetch only failed policy checks for the run
+      ansible.builtin.set_fact:
+        failed_policies: >-
+          {{ lookup('hashicorp.terraform.tf_policy_checks',
+                    run_id=run_id,
+                    only_failures=true,
+                    tfe_token=lookup('env','TFE_TOKEN')) }}
+
+    - name: Print failures (empty list means all good)
+      ansible.builtin.debug:
+        var: failed_policies
+
+    - name: Fetch the run event timeline (last 24h)
+      ansible.builtin.set_fact:
+        run_events: >-
+          {{ lookup('hashicorp.terraform.tf_run_events',
+                    run_id=run_id,
+                    since=(ansible_date_time.iso8601_micro
+                           | default((now() - (24 * 3600)) | strftime('%Y-%m-%dT%H:%M:%SZ'))),
+                    tfe_token=lookup('env','TFE_TOKEN')) }}
+
+    - name: Print event timeline
+      ansible.builtin.debug:
+        var: run_events

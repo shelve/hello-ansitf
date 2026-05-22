@@ -1,0 +1,22 @@
+---
+# examples/16_lookup_variable_set_vars.yml
+#
+# Demonstrates `tf_variable_set_vars` — list every variable in a given set.
+# Handy for audit reports or diff checking against a baseline definition.
+
+- name: Bootstrap pytfe (no-op if already present)
+  import_playbook: ../playbooks/bootstrap_pytfe.yml
+
+- name: Demo - list contents of a variable set
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Fetch by organization + name
+      ansible.builtin.debug:
+        msg: >-
+          {{ lookup('hashicorp.terraform.tf_variable_set_vars',
+                    organization=tfc_organization,
+                    name='shared-aws-credentials',
+                    display_sensitive=false,
+                    tfe_token=lookup('env','TFE_TOKEN')) }}
