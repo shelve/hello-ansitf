@@ -61,8 +61,8 @@
     # =====================================================================
     - name: Resolve the demo project
       hashicorp.terraform.project_info:
-        organization: "{{ tfc_organization }}"
-        project: "{{ tfc_project }}"
+        #organization: "{{ tfc_organization }}"
+        project: "{{ tfc_project_id_default }}"
         <<: *auth
       register: proj
 
