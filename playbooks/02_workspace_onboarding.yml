@@ -26,8 +26,8 @@
   tasks:
     - name: Resolve the project ID we want the workspace to live in
       hashicorp.terraform.project_info:
-        organization: "{{ tfc_organization }}"
-        project: "{{ tfc_project }}"
+        #organization: "{{ tfc_organization }}"
+        project_id: "{{ tfc_project_id_default }}"
         tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
       register: proj
 
