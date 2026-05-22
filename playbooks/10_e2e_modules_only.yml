@@ -41,19 +41,20 @@
     # Re-usable auth block — every module call merges this in via YAML anchors.
     common_auth: &auth
       tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
-      tfe_address: "{{ tfe_address }}"
-
-    # User-supplied at job launch (AAP survey or CLI -e).
-    new_workspace: "{{ new_workspace | mandatory }}"
-    environment_tag: "{{ environment_tag | default('nonprod') }}"
-    region: "{{ region | default('us-east-1') }}"
-    app_name: "{{ app_name | default('aap-demo-app') }}"
-
-    # Where the Terraform code lives — defaults to the null-provider config
-    # shipped in this repo. Override to point at any directory of .tf files.
-    tf_config_dir: "{{ tf_config_dir | default(playbook_dir + '/../files/null_tf_config') }}"
+      ##tfe_address: "{{ #tfe_address }}"
+    # NOTE: do NOT redeclare survey-driven vars (new_workspace, environment_tag,
+    # region, app_name, tf_config_dir) here with `default(...)` — that pattern
+    # is self-referential and Ansible's templating engine recurses through it
+    # until it bails out ("unhandled exception while templating"). Apply the
+    # defaults inline at the point of use instead. `| mandatory` is safe —
+    # it raises immediately on undefined and never re-enters the var lookup.
 
   tasks:
+    - name: Assert new_workspace was provided
+      ansible.builtin.fail:
+        msg: "Pass `-e new_workspace=<name>` (or fill the survey field)."
+      when: new_workspace is not defined or (new_workspace | length == 0)
+
     # =====================================================================
     # 1. Resolve the project ID so we can place the workspace inside it.
     #    `project_info` is a plain module — runs on the target python.
@@ -77,7 +78,7 @@
         organization: "{{ tfc_organization }}"
         workspace: "{{ new_workspace }}"
         project_id: "{{ proj.project.id }}"
-        description: "End-to-end modules-only demo (env={{ environment_tag }})"
+        description: "End-to-end modules-only demo (env={{ environment_tag | default('nonprod') }})"
         terraform_version: "1.9.5"
         execution_mode: remote
         auto_apply: false          # we control apply ourselves below
@@ -104,9 +105,9 @@
         state: present
         <<: *auth
       loop:
-        - { key: region,      value: "{{ region }}" }
-        - { key: environment, value: "{{ environment_tag }}" }
-        - { key: app_name,    value: "{{ app_name }}" }
+        - { key: region,      value: "{{ region          | default('us-east-1') }}" }
+        - { key: environment, value: "{{ environment_tag | default('nonprod') }}" }
+        - { key: app_name,    value: "{{ app_name        | default('aap-demo-app') }}" }
       loop_control:
         label: "{{ item.key }}={{ item.value }}"
 
@@ -116,7 +117,7 @@
     - name: Upload Terraform code as a new configuration version
       hashicorp.terraform.configuration_version:
         workspace_id: "{{ ws.workspace.id }}"
-        configuration_files_path: "{{ tf_config_dir }}"
+        configuration_files_path: "{{ tf_config_dir | default(playbook_dir ~ '/../files/null_tf_config') }}"
         # We'll kick off the run explicitly in the next step so we control
         # its flags (auto_apply, run_message, etc).
         auto_queue_runs: false

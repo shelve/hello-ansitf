@@ -25,7 +25,7 @@
         assessments_enforced: true
         state: present
         tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
-        tfe_address: "{{ tfe_address }}"
+        #tfe_address: "{{ #tfe_address }}"
 
     - name: Create / update the demo project
       hashicorp.terraform.project:
@@ -39,7 +39,7 @@
           - { key: env,   value: nonprod }
         state: present
         tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
-        tfe_address: "{{ tfe_address }}"
+        #tfe_address: "{{ #tfe_address }}"
 
     - name: Create / update the shared-cloud-creds variable set (global)
       hashicorp.terraform.variable_sets:
@@ -50,7 +50,7 @@
         priority: true
         state: present
         tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
-        tfe_address: "{{ tfe_address }}"
+        #tfe_address: "{{ #tfe_address }}"
 
     - name: Create / update the global-tags variable set (org-wide defaults)
       hashicorp.terraform.variable_sets:
@@ -61,4 +61,4 @@
         priority: false
         state: present
         tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
-        tfe_address: "{{ tfe_address }}"
+        #tfe_address: "{{ #tfe_address }}"

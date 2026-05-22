@@ -18,16 +18,19 @@
   hosts: localhost
   gather_facts: false
   connection: local
-  vars:
-    tf_config_dir: "{{ tf_config_dir | default(playbook_dir + '/../files/sample_tf_config') }}"
-    auto_apply: "{{ auto_apply | default(false) | bool }}"
-    print_diff: "{{ print_diff | default(true) | bool }}"
+  # NOTE: do NOT add `tf_config_dir`, `auto_apply` or `print_diff` to a
+  # play-level `vars:` block with a default-on-self expression like
+  # `{{ tf_config_dir | default(...) }}`. When the variable isn't supplied,
+  # Ansible's templating engine resolves the var lookup to the SAME template
+  # string and recurses until it bails out (`unhandled exception while
+  # templating`). Default each one inline in the task arg below — that way
+  # `default()` short-circuits cleanly when the var is undefined.
   tasks:
     - name: Upload directory as a new configuration version
       hashicorp.terraform.configuration_version:
         organization: "{{ tfc_organization }}"
         workspace: "{{ tfc_workspace }}"
-        configuration_files_path: "{{ tf_config_dir }}"
+        configuration_files_path: "{{ tf_config_dir | default(playbook_dir ~ '/../files/sample_tf_config') }}"
         auto_queue_runs: false
         state: present
         tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
@@ -39,8 +42,8 @@
         workspace: "{{ tfc_workspace }}"
         configuration_version: "{{ cv.configuration_version.id }}"
         run_message: "Plan from AAP — cv={{ cv.configuration_version.id }}"
-        plan_only: "{{ not auto_apply }}"
-        auto_apply: "{{ auto_apply }}"
+        plan_only: "{{ not (auto_apply | default(false) | bool) }}"
+        auto_apply: "{{ auto_apply | default(false) | bool }}"
         poll: true
         poll_interval: "{{ run_poll_interval_seconds }}"
         poll_timeout: "{{ run_poll_timeout_seconds }}"
@@ -54,12 +57,12 @@
         output_format: diff
         tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
       register: plan_diff
-      when: print_diff
+      when: print_diff | default(true) | bool
 
     - name: Show the diff
       ansible.builtin.debug:
         var: plan_diff.diff
-      when: print_diff
+      when: print_diff | default(true) | bool
 
     - name: Expose run_id so a downstream Workflow node can apply it
       ansible.builtin.set_stats:

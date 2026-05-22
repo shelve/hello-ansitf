@@ -17,13 +17,17 @@
   hosts: localhost
   gather_facts: false
   connection: local
-  vars:
-    # These would come from an AAP survey in production.
-    new_workspace: "{{ new_workspace | mandatory }}"
-    environment_tag: "{{ environment_tag | default('nonprod') }}"
-    region: "{{ region | default('us-east-1') }}"
-
+  # NOTE: do NOT redeclare survey-driven vars (new_workspace, environment_tag,
+  # region, …) in a play-level `vars:` block with `default(...)` — that's
+  # self-referential and triggers recursive templating when the survey
+  # doesn't supply the field. Apply defaults inline at point-of-use instead.
+  # `mandatory` is safe (raises on undefined) but `default()` is not.
   tasks:
+    - name: Assert new_workspace was provided
+      ansible.builtin.fail:
+        msg: "Pass `-e new_workspace=<name>` (or fill the survey field)."
+      when: new_workspace is not defined or (new_workspace | length == 0)
+
     - name: Resolve the project ID we want the workspace to live in
       hashicorp.terraform.project_info:
         #organization: "{{ tfc_organization }}"
@@ -37,7 +41,7 @@
         organization: "{{ tfc_organization }}"
         workspace: "{{ new_workspace }}"
         project_id: "{{ proj.project.id }}"
-        description: "Onboarded by AAP for env={{ environment_tag }}"
+        description: "Onboarded by AAP for env={{ environment_tag | default('nonprod') }}"
         terraform_version: "1.9.5"
         execution_mode: remote
         auto_apply: false
@@ -53,8 +57,8 @@
         workspace: "{{ new_workspace }}"
 
         variables:
-          - { key: region, value: "{{ region }}", category: terraform }
-          - { key: environment, value: "{{ environment_tag }}", category: terraform }
+          - { key: region, value: "{{ region | default('us-east-1') }}", category: terraform }
+          - { key: environment, value: "{{ environment_tag | default('nonprod') }}", category: terraform }
 
         variable_sets:
           - name: "shared-cloud-creds"

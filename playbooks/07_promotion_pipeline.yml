@@ -15,10 +15,16 @@
   hosts: localhost
   gather_facts: false
   connection: local
-  vars:
-    target_stage: "{{ target_stage | mandatory }}"   # e.g. "aap-demo-app-stage"
-    source_stage: "{{ source_stage | default('') }}" # e.g. "aap-demo-app-dev"
+  # NOTE: do not redeclare `source_stage` in vars: with `default('')` — that
+  # is self-referential and triggers recursive templating. Default it inline
+  # at each point of use instead. `target_stage` with `mandatory` is fine —
+  # mandatory raises immediately on undefined and never re-enters the var.
   tasks:
+    - name: Assert target_stage was provided
+      ansible.builtin.fail:
+        msg: "Pass `-e target_stage=<workspace>` (or fill the survey field)."
+      when: target_stage is not defined or (target_stage | length == 0)
+
     - name: Ensure the run-trigger from source → target exists
       hashicorp.terraform.run_trigger:
         organization: "{{ tfc_organization }}"
@@ -26,7 +32,7 @@
         sourceable_workspace: "{{ source_stage }}"
         state: present
         tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
-      when: source_stage | length > 0
+      when: (source_stage | default('')) | length > 0
 
     - name: Trigger a plan on the target
       hashicorp.terraform.run:

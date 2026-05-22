@@ -14,10 +14,17 @@
   hosts: localhost
   gather_facts: false
   connection: local
-  vars:
-    target_workspace: "{{ target_workspace | mandatory }}"
-    force_delete: "{{ force_delete | default(false) | bool }}"
+  # NOTE: avoid self-referencing `vars:` entries like
+  # `force_delete: "{{ force_delete | default(false) }}"` — when the var
+  # isn't supplied it triggers a recursive-templating crash. Default each
+  # variable inline at point of use instead. `mandatory` is safe (it raises
+  # immediately on undefined) but `default()` is not.
   tasks:
+    - name: Assert target_workspace was provided
+      ansible.builtin.fail:
+        msg: "Pass `-e target_workspace=<name>` (or fill the survey field)."
+      when: target_workspace is not defined or (target_workspace | length == 0)
+
     - name: Resolve workspace ID
       hashicorp.terraform.workspace_info:
         organization: "{{ tfc_organization }}"
@@ -39,5 +46,5 @@
       hashicorp.terraform.workspace:
         workspace_id: "{{ ws.workspace.id }}"
         state: absent
-        force: "{{ force_delete }}"
+        force: "{{ force_delete | default(false) | bool }}"
         tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
