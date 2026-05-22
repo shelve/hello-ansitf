@@ -22,7 +22,7 @@
     new_workspace: "{{ new_workspace | mandatory }}"
     environment_tag: "{{ environment_tag | default('nonprod') }}"
     region: "{{ region | default('us-east-1') }}"
-    slack_webhook_url: "{{ slack_webhook_url | default('') }}"
+    
   tasks:
     - name: Resolve the project ID we want the workspace to live in
       hashicorp.terraform.project_info:
@@ -59,17 +59,6 @@
         variable_sets:
           - name: "shared-cloud-creds"
           - name: "global-tags"
-
-        notifications: >-
-          {{
-            [{
-              'name': 'slack-platform',
-              'destination_type': 'slack',
-              'url': slack_webhook_url,
-              'triggers': ['run:needs_attention','run:errored','run:completed'],
-              'enabled': true
-            }] if slack_webhook_url else []
-          }}
 
         reconcile: true
         tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
