@@ -1,0 +1,227 @@
+---
+# playbooks/10_e2e_modules_only.yml
+#
+# WORKFLOW: End-to-end Terraform run — workspace create → variables →
+#           upload code → plan → apply → read outputs — using ONLY MODULES,
+#           no action plugins.
+#
+# WHY a modules-only path exists alongside the workspace_bootstrap /
+# promote_run / view_plan workflows:
+#
+#   * MODULES (workspace, variable, configuration_version, run, run_info,
+#     output, workspace_info, project_info) are serialized and executed on
+#     the *target host's* Python interpreter. When you `pip install pytfe`
+#     via ansible.builtin.pip from bootstrap_pytfe.yml, that lands in the
+#     target python — exactly where the next module task imports from. ✓
+#
+#   * ACTION PLUGINS (workspace_bootstrap, promote_run, view_plan) run in
+#     the *controller* Python — the EE's interpreter that's running
+#     ansible-playbook itself. ansible.builtin.pip targets the same
+#     interpreter ID by default, but in EEs that ship MULTIPLE pythons
+#     (system /usr/bin/python3 vs /opt/.../python3.12) the controller
+#     python may differ from the target python — and pytfe ends up only
+#     on one of them. The action plugin then fails to import pytfe even
+#     though the modules later succeed.
+#
+# This playbook avoids the issue entirely: no action plugins anywhere. The
+# tradeoff is a few more tasks (no one-shot workspace_bootstrap, no
+# policy-aware promote_run, no view_plan diff rendering). If your EE bakes
+# pytfe in at build time, the action-plugin path is fine — use
+# playbooks/02_workspace_onboarding.yml etc. instead.
+
+- name: Bootstrap pytfe into the EE (no-op if disabled or already installed)
+  import_playbook: bootstrap_pytfe.yml
+
+- name: End-to-end Terraform run using ONLY modules
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars:
+    # Re-usable auth block — every module call merges this in via YAML anchors.
+    common_auth: &auth
+      tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      tfe_address: "{{ tfe_address }}"
+
+    # User-supplied at job launch (AAP survey or CLI -e).
+    new_workspace: "{{ new_workspace | mandatory }}"
+    environment_tag: "{{ environment_tag | default('nonprod') }}"
+    region: "{{ region | default('us-east-1') }}"
+    app_name: "{{ app_name | default('aap-demo-app') }}"
+
+    # Where the Terraform code lives — defaults to the null-provider config
+    # shipped in this repo. Override to point at any directory of .tf files.
+    tf_config_dir: "{{ tf_config_dir | default(playbook_dir + '/../files/null_tf_config') }}"
+
+  tasks:
+    # =====================================================================
+    # 1. Resolve the project ID so we can place the workspace inside it.
+    #    `project_info` is a plain module — runs on the target python.
+    # =====================================================================
+    - name: Resolve the demo project
+      hashicorp.terraform.project_info:
+        organization: "{{ tfc_organization }}"
+        project: "{{ tfc_project }}"
+        <<: *auth
+      register: proj
+
+    - name: Show resolved project id
+      ansible.builtin.debug:
+        msg: "project_id = {{ proj.project.id }}"
+
+    # =====================================================================
+    # 2. Create / update the workspace shell. Module, not action plugin.
+    # =====================================================================
+    - name: Create / update the workspace shell
+      hashicorp.terraform.workspace:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ new_workspace }}"
+        project_id: "{{ proj.project.id }}"
+        description: "End-to-end modules-only demo (env={{ environment_tag }})"
+        terraform_version: "1.9.5"
+        execution_mode: remote
+        auto_apply: false          # we control apply ourselves below
+        allow_destroy_plan: true
+        assessments_enabled: false # keep the demo cheap & predictable
+        state: present
+        <<: *auth
+      register: ws
+
+    - name: Show resolved workspace id
+      ansible.builtin.debug:
+        msg: "workspace_id = {{ ws.workspace.id }}"
+
+    # =====================================================================
+    # 3. Set workspace variables. Instead of workspace_bootstrap (action
+    #    plugin) we loop the plain `variable` module — one task per var.
+    # =====================================================================
+    - name: Set Terraform input variables on the workspace
+      hashicorp.terraform.variable:
+        workspace_id: "{{ ws.workspace.id }}"
+        key: "{{ item.key }}"
+        value: "{{ item.value }}"
+        category: terraform
+        state: present
+        <<: *auth
+      loop:
+        - { key: region,      value: "{{ region }}" }
+        - { key: environment, value: "{{ environment_tag }}" }
+        - { key: app_name,    value: "{{ app_name }}" }
+      loop_control:
+        label: "{{ item.key }}={{ item.value }}"
+
+    # =====================================================================
+    # 4. Upload the Terraform code as a new configuration version. Module.
+    # =====================================================================
+    - name: Upload Terraform code as a new configuration version
+      hashicorp.terraform.configuration_version:
+        workspace_id: "{{ ws.workspace.id }}"
+        configuration_files_path: "{{ tf_config_dir }}"
+        # We'll kick off the run explicitly in the next step so we control
+        # its flags (auto_apply, run_message, etc).
+        auto_queue_runs: false
+        state: present
+        <<: *auth
+      register: cv
+
+    - name: Show configuration version id
+      ansible.builtin.debug:
+        msg: "configuration_version_id = {{ cv.configuration_version.id }}"
+
+    # =====================================================================
+    # 5. Create a run (plan). plan_only=false so it can be applied later.
+    #    poll=true blocks until the plan settles (or hits poll_timeout).
+    # =====================================================================
+    - name: Create a run (plan)
+      hashicorp.terraform.run:
+        workspace_id: "{{ ws.workspace.id }}"
+        configuration_version: "{{ cv.configuration_version.id }}"
+        run_message: "Modules-only E2E demo from AAP — {{ ansible_date_time.iso8601 | default('') }}"
+        plan_only: false
+        auto_apply: false          # we apply via state=applied below
+        poll: true
+        poll_interval: "{{ run_poll_interval_seconds }}"
+        poll_timeout: "{{ run_poll_timeout_seconds }}"
+        state: present
+        <<: *auth
+      register: planned
+
+    - name: Show plan outcome
+      ansible.builtin.debug:
+        msg: >-
+          run {{ planned.run.id }}
+          status={{ planned.run.attributes.status }}
+          has-changes={{ planned.run.attributes['has-changes'] | default('unknown') }}
+
+    # =====================================================================
+    # 6. (Module-equivalent of `view_plan` action) Pull the run details so
+    #    the operator can see plan metadata in the job stdout. `run_info`
+    #    is a regular module.
+    # =====================================================================
+    - name: Fetch run info for the operator
+      hashicorp.terraform.run_info:
+        run_id: "{{ planned.run.id }}"
+        <<: *auth
+      register: run_details
+
+    - name: Print run metadata
+      ansible.builtin.debug:
+        msg:
+          - "Run ID:         {{ run_details.run.id }}"
+          - "Status:         {{ run_details.run.attributes.status }}"
+          - "Created at:     {{ run_details.run.attributes['created-at'] | default('?') }}"
+          - "Message:        {{ run_details.run.attributes.message | default('') }}"
+          - "Plan-only:      {{ run_details.run.attributes['plan-only'] | default(false) }}"
+          - "Is-destroy:     {{ run_details.run.attributes['is-destroy'] | default(false) }}"
+
+    # =====================================================================
+    # 7. Apply the run. `state: applied` is the module path — NOT the
+    #    promote_run action plugin. No policy gate; for that you need the
+    #    action plugin (use playbook 04 once your EE bakes pytfe in).
+    # =====================================================================
+    - name: Apply the run iff it's awaiting confirmation
+      hashicorp.terraform.run:
+        run_id: "{{ planned.run.id }}"
+        state: applied
+        poll: true
+        poll_interval: "{{ run_poll_interval_seconds }}"
+        poll_timeout: 1800
+        <<: *auth
+      when: planned.run.attributes.status in
+              ['planned', 'cost_estimated', 'policy_checked', 'post_plan_completed', 'confirmed']
+      register: applied
+
+    - name: Show apply outcome
+      ansible.builtin.debug:
+        msg: >-
+          {% if applied is defined and applied.run is defined %}
+          run {{ applied.run.id }} final status = {{ applied.run.attributes.status }}
+          {% else %}
+          apply skipped — plan status was {{ planned.run.attributes.status }} (nothing to apply)
+          {% endif %}
+
+    # =====================================================================
+    # 8. Read outputs from the workspace's new state. Module.
+    # =====================================================================
+    - name: Fetch all outputs from the workspace's current state
+      hashicorp.terraform.output:
+        workspace_id: "{{ ws.workspace.id }}"
+        display_sensitive: false
+        <<: *auth
+      register: outs
+
+    - name: Show outputs
+      ansible.builtin.debug:
+        var: outs.outputs
+
+    # =====================================================================
+    # 9. Expose the key IDs to downstream Workflow Template nodes via
+    #    set_stats. Anything in `data:` becomes a top-level extra_var on
+    #    the next node when "Variables from prior nodes" is enabled.
+    # =====================================================================
+    - name: Hand IDs off to downstream Workflow nodes
+      ansible.builtin.set_stats:
+        data:
+          tfc_workspace_id:             "{{ ws.workspace.id }}"
+          tfc_configuration_version_id: "{{ cv.configuration_version.id }}"
+          tfc_run_id:                   "{{ planned.run.id }}"

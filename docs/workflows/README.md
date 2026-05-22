@@ -15,3 +15,11 @@ plan/apply story spans two Job Templates connected by an approval node.
 | 7 | Dev → Stage → Prod promotion | `playbooks/07_promotion_pipeline.yml` | [07-promotion-pipeline.md](07-promotion-pipeline.md) |
 | 8 | Rotate workspace secrets | `playbooks/08_rotate_secrets.yml` | [08-rotate-secrets.md](08-rotate-secrets.md) |
 | 9 | Scheduled drift audit | `playbooks/09_drift_audit.yml` | [09-drift-audit.md](09-drift-audit.md) |
+| 10 | **End-to-end modules-only** (no action plugins — safe on stock EE) | `playbooks/10_e2e_modules_only.yml` | [10-e2e-modules-only.md](10-e2e-modules-only.md) |
+
+> 💡 **Which workflow should I run first on a fresh AAP install?**
+> Workflow **#10**. It uses only modules (no action plugins) so it runs
+> reliably on the stock "Default execution environment" with the runtime
+> pytfe bootstrap. Once you've validated it end-to-end, move on to the
+> action-plugin workflows (`02`, `04`, `07`) — those need pytfe in the
+> controller python, which usually means a custom EE.
