@@ -1,0 +1,39 @@
+---
+# Dynamic inventory — `outputs` source, SINGLE workspace
+# (organization + workspace explicitly).
+#
+# Use this when you want the inventory scoped to exactly one workspace —
+# stabler than the wildcard variant and lower API cost.
+#
+# Smoke test locally:
+#   ansible-inventory -i inventories/tfc_outputs_single/tfc_inventory.yml --graph
+#
+# Auth: TFE_TOKEN env var (provided by the AAP TFE credential injector).
+
+plugin: hashicorp.terraform.tfc_inv
+source: outputs
+
+organization: prab-sandbox02
+workspace: test-ec2-create
+
+# Uncomment to consume a specific Terraform output (e.g. a list(object)).
+# hosts_from:
+#   output: ec2_hosts_dict
+#   type: dynamic
+
+# `enable_parallel_processing` / `concurrency` are v2.1.0+ options; on
+# v2.0.0 they're inert. The single-workspace case doesn't benefit much
+# from parallelism but the knobs are kept here for parity with the wildcard
+# variant, so swapping between the two doesn't change the YAML shape.
+enable_parallel_processing: true
+concurrency: 10
+
+cache: yes
+cache_plugin: ansible.builtin.jsonfile
+cache_connection: /tmp/ansible_inventory_cache
+cache_timeout: 3600
+cache_validate_current_state_version: false
+
+compose:
+  ansible_host: public_ip
+  ansible_user: '"ec2-user"'

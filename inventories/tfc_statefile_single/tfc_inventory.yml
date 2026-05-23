@@ -1,0 +1,48 @@
+---
+# Dynamic inventory — `statefile` source, SINGLE workspace
+# (organization + workspace explicitly).
+#
+# Use this for predictable demos where you want exactly one workspace's
+# resources surfaced as Ansible hosts.
+#
+# Smoke test locally:
+#   ansible-inventory -i inventories/tfc_statefile_single/tfc_inventory.yml --graph
+#
+# Auth: TFE_TOKEN env var (provided by the AAP TFE credential injector).
+
+plugin: hashicorp.terraform.tfc_inv
+source: statefile
+
+organization: prab-sandbox02
+workspace: test-ec2-create
+
+# Extend the built-in provider/type set.
+provider_mapping:
+  - provider_name: registry.terraform.io/hashicorp/aws
+    types:
+      - aws_network_interface
+
+search_child_modules: true
+
+cache: false
+cache_plugin: ansible.builtin.jsonfile
+cache_connection: /tmp/ansible_inventory_cache
+cache_timeout: 3600
+cache_validate_current_state_version: false
+
+enable_parallel_processing: true
+concurrency: 10
+
+hostnames:
+  - tag:Name
+
+compose:
+  ansible_host: public_ip
+
+keyed_groups:
+  - key: instance_state
+    prefix: state
+    separator: _
+
+groups:
+  hcp_ec2_instances: "'hcp-ec2' in (tags.Name | default(''))"

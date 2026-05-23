@@ -1,0 +1,63 @@
+---
+# Dynamic inventory — `statefile` source, WILDCARD across every workspace
+# in the organization (workspace_filters.wildcard_name: "*").
+#
+# What it does:
+#   * Iterates every workspace in `organization` matching the wildcard.
+#   * Pulls each workspace's latest state version.
+#   * Walks `resources[]` and emits one Ansible host per matching resource
+#     instance (built-in AWS/Azure/GCP types + anything in provider_mapping).
+#
+# Smoke test locally:
+#   ansible-inventory -i inventories/tfc_statefile_wildcard/tfc_inventory.yml --graph
+#
+# Auth: TFE_TOKEN env var (provided by the AAP TFE credential injector).
+#
+# VERSION NOTE: `workspace_filters`, `enable_parallel_processing`,
+# `concurrency`, and `cache*` are v2.1.0+. With the v2.0.0 pin they error
+# out; launch with `-e collection_git_ref=release-2.1` to test the new
+# features (docs/04-overriding-collection-from-git.md).
+
+plugin: hashicorp.terraform.tfc_inv
+source: statefile
+
+organization: prab-sandbox02
+
+workspace_filters:
+  wildcard_name: "*"
+
+# Extend the built-in provider/type set. `aws_network_interface` is treated
+# as inventory-bearing (one host per ENI) — useful for environments where
+# you want secondary IPs / ENIs surfaced as separate hosts.
+provider_mapping:
+  - provider_name: registry.terraform.io/hashicorp/aws
+    types:
+      - aws_network_interface
+
+# Walk into child-module resources too (e.g. module.eks.aws_instance.worker).
+search_child_modules: true
+
+cache: false
+cache_plugin: ansible.builtin.jsonfile
+cache_connection: /tmp/ansible_inventory_cache
+cache_timeout: 3600
+cache_validate_current_state_version: false
+
+enable_parallel_processing: true
+concurrency: 10
+
+# Hostname preference list — first non-empty wins. tag:Name is the most
+# common shape for AWS resources.
+hostnames:
+  - tag:Name
+
+compose:
+  ansible_host: public_ip
+
+keyed_groups:
+  - key: instance_state
+    prefix: state
+    separator: _
+
+groups:
+  hcp_ec2_instances: "'hcp-ec2' in (tags.Name | default(''))"

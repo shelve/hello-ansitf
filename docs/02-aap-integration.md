@@ -16,7 +16,7 @@ single playbook from this repo.
 | **Project** | A git checkout AAP pulls and re-pulls on demand. | This repo, cloned into AAP. |
 | **Execution Environment (EE)** | A container image with Python + ansible-core + collections. | We use the stock `Default execution environment` + `bootstrap_pytfe.yml`. |
 | **Credential** | A typed secret bundle that gets injected into the EE at job time (as env vars or extra_vars). | The custom `Terraform Cloud Token` credential type holds `TFE_TOKEN`. |
-| **Inventory** | A list of hosts. Can be static (a YAML file) or sourced from a plugin. | Either `inventories/sample/` or `inventories/tfc_state` / `inventories/tfc_outputs`. |
+| **Inventory** | A list of hosts. Can be static (a YAML file) or sourced from a plugin. | Either `inventories/sample/` or one of the four `inventories/tfc_*` dynamic configs (single vs wildcard × outputs vs statefile). |
 | **Inventory Source** | A child of an Inventory that runs an inventory plugin on a schedule (or on demand). | The `tfc_inv` plugin reading from a project file. |
 | **Job Template** | "Run *this* playbook against *that* inventory with *those* credentials, optionally asking the user *these* questions (the survey)." | One per workflow playbook. |
 | **Workflow Template** | A DAG of Job Templates with approval nodes. | The plan → approval → apply workflow. |
@@ -218,7 +218,7 @@ Then **Sources → Add**:
 | Name | `tfc_inv – statefile` |
 | Source | **Sourced from a Project** |
 | Project | `Terraform Collection Demo` |
-| Inventory File | `inventories/tfc_state/tfc_inventory.yml` |
+| Inventory File | `inventories/tfc_statefile_single/tfc_inventory.yml` |
 | Credential | `TFC – my-tfc-org` |
 | Update Options | ✅ Overwrite ✅ Update on launch |
 
@@ -228,7 +228,7 @@ resource Terraform is currently managing.
 ### 6c. Dynamic inventory from Terraform OUTPUTS
 
 Same recipe, change inventory file to
-`inventories/tfc_outputs/tfc_inventory.yml`.
+`inventories/tfc_outputs_single/tfc_inventory.yml`.
 
 ## Step 7 — create Job Templates (one per playbook)
 

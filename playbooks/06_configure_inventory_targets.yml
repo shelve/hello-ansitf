@@ -8,7 +8,7 @@
 #
 # Run:
 #   ansible-playbook \
-#     -i inventories/tfc_outputs/tfc_inventory.yml \
+#     -i inventories/tfc_outputs_single/tfc_inventory.yml \
 #     playbooks/06_configure_inventory_targets.yml
 #
 # In AAP, attach the inventory file via an "Inventory Source: Sourced from

@@ -1,0 +1,51 @@
+---
+# Dynamic inventory — `outputs` source, WILDCARD across every workspace in
+# the organization (workspace_filters.wildcard_name: "*").
+#
+# What it does:
+#   * Iterates every workspace in `organization` matching the wildcard.
+#   * For each, reads named outputs and builds inventory hosts.
+#   * No explicit `hosts_from` → the plugin only consumes the conventional
+#     `ansible_host` output. To pull a different output (e.g.
+#     `ec2_hosts_dict` of type list(object)), uncomment the `hosts_from:`
+#     block below.
+#
+# Smoke test locally:
+#   ansible-inventory -i inventories/tfc_outputs_wildcard/tfc_inventory.yml --graph
+#   ansible-inventory -i inventories/tfc_outputs_wildcard/tfc_inventory.yml --list
+#
+# Auth: TFE_TOKEN env var (provided by the AAP TFE credential injector).
+#
+# VERSION NOTE: `workspace_filters`, `enable_parallel_processing`,
+# `concurrency`, and `cache*` are v2.1.0+ options. With the v2.0.0 pin
+# in collections/requirements.yml the plugin will reject them. To test,
+# launch the Job with `-e collection_git_ref=release-2.1` so the bootstrap
+# play installs the collection from the 2.1 branch at runtime — see
+# docs/04-overriding-collection-from-git.md.
+
+plugin: hashicorp.terraform.tfc_inv
+source: outputs
+
+organization: prab-sandbox02
+
+workspace_filters:
+  wildcard_name: "*"
+
+# Uncomment to consume a specific Terraform output (e.g. a list(object)).
+# hosts_from:
+#   output: ec2_hosts_dict
+#   type: dynamic
+#   # type: list(object)
+
+enable_parallel_processing: true
+concurrency: 10
+
+cache: yes
+cache_plugin: ansible.builtin.jsonfile
+cache_connection: /tmp/ansible_inventory_cache
+cache_timeout: 3600
+cache_validate_current_state_version: false
+
+compose:
+  ansible_host: public_ip
+  ansible_user: '"ec2-user"'

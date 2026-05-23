@@ -2,8 +2,8 @@
 
 **Playbook:** [`playbooks/06_configure_inventory_targets.yml`](../../playbooks/06_configure_inventory_targets.yml)
 **Inventory configs:**
-* [`inventories/tfc_state/tfc_inventory.yml`](../../inventories/tfc_state/tfc_inventory.yml)
-* [`inventories/tfc_outputs/tfc_inventory.yml`](../../inventories/tfc_outputs/tfc_inventory.yml)
+* [`inventories/tfc_statefile_single/tfc_inventory.yml`](../../inventories/tfc_statefile_single/tfc_inventory.yml)
+* [`inventories/tfc_outputs_single/tfc_inventory.yml`](../../inventories/tfc_outputs_single/tfc_inventory.yml)
 
 The classic Ansible-after-Terraform handoff: Terraform provisions
 infrastructure, the `tfc_inv` v2.0.0 inventory plugin reads either the
@@ -40,7 +40,7 @@ Use when:
 * You want clean field names (no `aws_instance.*` clutter).
 * You need a SUBSET of resources Ansible-controllable.
 
-Example output that drives the file `inventories/tfc_outputs/`:
+Example output that drives the file `inventories/tfc_outputs_single/`:
 
 ```hcl
 output "ansible_host" {
@@ -63,11 +63,11 @@ inner dict fields (`public_ip`, `env`, `role`) become top-level host_vars.
 
 ```bash
 ansible-inventory \
-  -i inventories/tfc_outputs/tfc_inventory.yml \
+  -i inventories/tfc_outputs_single/tfc_inventory.yml \
   --graph
 
 ansible-playbook \
-  -i inventories/tfc_outputs/tfc_inventory.yml \
+  -i inventories/tfc_outputs_single/tfc_inventory.yml \
   playbooks/06_configure_inventory_targets.yml
 ```
 
@@ -76,7 +76,7 @@ ansible-playbook \
 1. **Resources → Inventories → Add** a new Inventory called
    `TFC outputs — aap-demo-app`.
 2. Add a **Source** of type **"Sourced from a Project"**, point at
-   `inventories/tfc_outputs/tfc_inventory.yml`, attach the `TFC` credential.
+   `inventories/tfc_outputs_single/tfc_inventory.yml`, attach the `TFC` credential.
 3. Sync the source. Hosts should appear.
 4. Create a Job Template:
    - Inventory: this new dynamic inventory.

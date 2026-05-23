@@ -81,11 +81,11 @@ ansible-playbook playbooks/02_workspace_onboarding.yml \
 
 ```bash
 ansible-inventory \
-  -i inventories/tfc_outputs/tfc_inventory.yml \
+  -i inventories/tfc_outputs_single/tfc_inventory.yml \
   --graph
 
 ansible-inventory \
-  -i inventories/tfc_state/tfc_inventory.yml \
+  -i inventories/tfc_statefile_single/tfc_inventory.yml \
   --list
 ```
 

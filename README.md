@@ -32,8 +32,10 @@ The repo is structured so you can:
 ├── group_vars/all/                   # org / project / workspace defaults
 ├── inventories/
 │   ├── sample/                       # static localhost (default)
-│   ├── tfc_state/                    # dynamic inventory from TF state
-│   └── tfc_outputs/                  # dynamic inventory from TF outputs
+│   ├── tfc_outputs_single/           # outputs source, single workspace
+│   ├── tfc_outputs_wildcard/         # outputs source, every workspace (workspace_filters)
+│   ├── tfc_statefile_single/         # statefile source, single workspace
+│   └── tfc_statefile_wildcard/       # statefile source, every workspace
 ├── playbooks/
 │   ├── bootstrap_pytfe.yml           # imported by every workflow play
 │   ├── 01_org_foundation.yml         # WORKFLOW: org + project + var-sets
@@ -155,8 +157,8 @@ Read these in order:
 | `notification_configuration`                 | `examples/12_notification_configuration.yml`, `playbooks/02_*` |
 | `run_trigger`                                | `examples/13_run_trigger.yml`, `playbooks/07_*`   |
 | `ssh_keys`                                   | `examples/14_ssh_keys.yml`                        |
-| `tfc_inv` inventory plugin (statefile)       | `inventories/tfc_state/`, `playbooks/06_*`        |
-| `tfc_inv` inventory plugin (outputs)         | `inventories/tfc_outputs/`, `playbooks/06_*`      |
+| `tfc_inv` inventory plugin (statefile)       | `inventories/tfc_statefile_single/`, `playbooks/06_*`        |
+| `tfc_inv` inventory plugin (outputs)         | `inventories/tfc_outputs_single/`, `playbooks/06_*`      |
 | `tf_output` lookup                           | `examples/11_output.yml`                          |
 | `tf_policy_checks` lookup                    | `examples/15_lookup_policy_checks.yml`            |
 | `tf_run_events` lookup                       | `examples/15_lookup_policy_checks.yml`, `playbooks/09_*` |
