@@ -1,0 +1,65 @@
+---
+# playbooks/02_workspace_onboarding_ee.yml
+#
+# WORKFLOW: "workspace onboarding" for custom EE usage where pytfe is
+# already baked into the image. This playbook intentionally does not import
+# any bootstrap_pytfe playbook.
+
+- name: Workspace onboarding - one-shot baseline (custom EE)
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  # NOTE: do NOT redeclare survey-driven vars (new_workspace, environment_tag,
+  # region, ...) in a play-level `vars:` block with `default(...)` - that's
+  # self-referential and triggers recursive templating when the survey
+  # doesn't supply the field. Apply defaults inline at point-of-use instead.
+  # `mandatory` is safe (raises on undefined) but `default()` is not.
+  tasks:
+    - name: Assert new_workspace was provided
+      ansible.builtin.fail:
+        msg: "Pass `-e new_workspace=<name>` (or fill the survey field)."
+      when: new_workspace is not defined or (new_workspace | length == 0)
+
+    - name: Resolve the project ID we want the workspace to live in
+      hashicorp.terraform.project_info:
+        #organization: "{{ tfc_organization }}"
+        project_id: "{{ tfc_project_id_default }}"
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: proj
+
+    # Step 1: create the workspace shell inside the right project.
+    - name: Create / update the workspace shell
+      hashicorp.terraform.workspace:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ new_workspace }}"
+        project_id: "{{ proj.project.id }}"
+        description: "Onboarded by AAP for env={{ environment_tag | default('nonprod') }}"
+        terraform_version: "1.9.5"
+        execution_mode: remote
+        auto_apply: false
+        allow_destroy_plan: true
+        assessments_enabled: true
+        state: present
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+
+    # Step 2: converge variables, var-set attachments, notifications.
+    - name: Converge full workspace baseline
+      hashicorp.terraform.workspace_bootstrap:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ new_workspace }}"
+
+        variables:
+          - { key: region, value: "{{ region | default('us-east-1') }}", category: terraform }
+          - { key: environment, value: "{{ environment_tag | default('nonprod') }}", category: terraform }
+
+        variable_sets:
+          - name: "shared-cloud-creds"
+          - name: "global-tags"
+
+        reconcile: true
+        tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+      register: bootstrap
+
+    - name: Show what changed
+      ansible.builtin.debug:
+        var: bootstrap
