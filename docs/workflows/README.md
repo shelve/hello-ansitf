@@ -16,6 +16,7 @@ plan/apply story spans two Job Templates connected by an approval node.
 | 8 | Rotate workspace secrets | `playbooks/08_rotate_secrets.yml` | [08-rotate-secrets.md](08-rotate-secrets.md) |
 | 9 | Scheduled drift audit | `playbooks/09_drift_audit.yml` | [09-drift-audit.md](09-drift-audit.md) |
 | 10 | **End-to-end modules-only** (no action plugins — safe on stock EE) | `playbooks/10_e2e_modules_only.yml` | [10-e2e-modules-only.md](10-e2e-modules-only.md) |
+| 11 | **AAP integrated EE demo** (workspace → apply → inventory sync → configure host) | `playbooks/11_e2e_aws_inventory_demo_ee.yml` + `playbooks/12_demo_configure_targets_from_dynamic_inventory.yml` | [11-aap-ee-integrated-demo.md](11-aap-ee-integrated-demo.md) |
 
 > 💡 **Which workflow should I run first on a fresh AAP install?**
 > Workflow **#10**. It uses only modules (no action plugins) so it runs

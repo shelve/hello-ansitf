@@ -1,0 +1,121 @@
+---
+# playbooks/11_e2e_aws_inventory_demo_ee.yml
+#
+# EE-focused E2E demo:
+#   1) create/update workspace
+#   2) upload AWS Terraform config
+#   3) plan + apply
+#   4) expose IDs for downstream workflow nodes
+#
+# This playbook assumes pytfe is already baked into the custom EE.
+
+- name: E2E AWS demo - workspace to applied run (custom EE)
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars:
+    common_auth: &auth
+      tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+
+  tasks:
+    - name: Assert new_workspace was provided
+      ansible.builtin.fail:
+        msg: "Pass `-e new_workspace=<name>` (or fill the survey field)."
+      when: new_workspace is not defined or (new_workspace | length == 0)
+
+    - name: Resolve target project
+      hashicorp.terraform.project_info:
+        project_id: "{{ tfc_project_id_default }}"
+        <<: *auth
+      register: proj
+
+    - name: Create or update workspace shell
+      hashicorp.terraform.workspace:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ new_workspace }}"
+        project_id: "{{ proj.project.id }}"
+        description: "AAP integrated EE demo workspace"
+        terraform_version: "1.9.5"
+        execution_mode: remote
+        auto_apply: false
+        allow_destroy_plan: true
+        state: present
+        <<: *auth
+      register: ws
+
+    - name: Set terraform variables for demo workspace
+      hashicorp.terraform.variable:
+        workspace_id: "{{ ws.workspace.id }}"
+        key: "{{ item.key }}"
+        value: "{{ item.value }}"
+        category: terraform
+        state: present
+        <<: *auth
+      loop:
+        - { key: region, value: "{{ region | default('us-east-1') }}" }
+        - { key: environment, value: "{{ environment_tag | default('demo') }}" }
+        - { key: app_name, value: "{{ app_name | default('aap-demo-app') }}" }
+        - { key: instance_type, value: "{{ instance_type | default('t3.micro') }}" }
+        - { key: ssh_ingress_cidr, value: "{{ ssh_ingress_cidr | default('0.0.0.0/0') }}" }
+      loop_control:
+        label: "{{ item.key }}={{ item.value }}"
+
+    - name: Upload Terraform config (AWS EC2 demo)
+      hashicorp.terraform.configuration_version:
+        workspace_id: "{{ ws.workspace.id }}"
+        configuration_files_path: "{{ tf_config_dir | default(playbook_dir ~ '/../files/aws_ec2_demo_config') }}"
+        auto_queue_runs: false
+        state: present
+        <<: *auth
+      register: cv
+
+    - name: Create run (plan)
+      hashicorp.terraform.run:
+        workspace_id: "{{ ws.workspace.id }}"
+        configuration_version: "{{ cv.configuration_version.id }}"
+        run_message: "AAP integrated EE demo"
+        plan_only: false
+        auto_apply: false
+        poll: true
+        poll_interval: "{{ run_poll_interval_seconds }}"
+        poll_timeout: "{{ run_poll_timeout_seconds }}"
+        state: present
+        <<: *auth
+      register: planned
+
+    - name: Apply run
+      hashicorp.terraform.run:
+        run_id: "{{ planned.run.id }}"
+        state: applied
+        poll: true
+        poll_interval: "{{ run_poll_interval_seconds }}"
+        poll_timeout: 1800
+        <<: *auth
+      when: planned.run.attributes.status in ['planned', 'cost_estimated', 'policy_checked', 'post_plan_completed', 'confirmed']
+      register: applied
+
+    - name: Read outputs
+      hashicorp.terraform.output:
+        workspace_id: "{{ ws.workspace.id }}"
+        display_sensitive: false
+        <<: *auth
+      register: outs
+
+    - name: Show key outputs for operators
+      ansible.builtin.debug:
+        msg:
+          - "workspace={{ new_workspace }}"
+          - "run_id={{ planned.run.id }}"
+          - "instance_id={{ outs.outputs.instance_id.value | default('n/a') }}"
+          - "public_ip={{ outs.outputs.public_ip.value | default('n/a') }}"
+
+    - name: Expose workflow variables to downstream nodes
+      ansible.builtin.set_stats:
+        data:
+          tfc_workspace: "{{ new_workspace }}"
+          tfc_workspace_id: "{{ ws.workspace.id }}"
+          tfc_run_id: "{{ planned.run.id }}"
+          tfc_configuration_version_id: "{{ cv.configuration_version.id }}"
+          demo_env_group: "env_{{ environment_tag | default('demo') }}"
+          demo_role_group: "role_web"
