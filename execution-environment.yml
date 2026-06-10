@@ -1,0 +1,83 @@
+---
+# execution-environment.yml -- ansible-builder v3 definition
+#
+# Docs-aligned build:
+#   - hashicorp.terraform from Private Automation Hub (rh-certified)
+#   - pytfe from PyPI
+#
+# Build:
+#   export ANSIBLE_GALAXY_SERVER_RH_CERTIFIED_TOKEN='<private-hub-api-token>'
+#   docker login registry.redhat.io
+#   ansible-builder build \
+#     --tag aap-terraform-ee:2.0.0 \
+#     --container-runtime docker \
+#     --build-arg ANSIBLE_GALAXY_SERVER_RH_CERTIFIED_TOKEN="$ANSIBLE_GALAXY_SERVER_RH_CERTIFIED_TOKEN" \
+#     --no-cache
+
+version: 3
+
+images:
+  base_image:
+    # Use the minimal AAP 2.6 EE base (Python 3.12) so pytfe from PyPI can be
+    # resolved and installed cleanly during the builder stage.
+    name: registry.redhat.io/ansible-automation-platform-26/ee-minimal-rhel9:latest
+
+dependencies:
+  # Collection install source-of-truth.
+  galaxy: collections/requirements.yml
+
+  # Install pytfe from PyPI using requirements.txt.
+  python: requirements.txt
+
+  system: []
+
+build_arg_defaults:
+  # Hub in this environment uses a self-signed cert.
+  ANSIBLE_GALAXY_CLI_COLLECTION_OPTS: "--ignore-certs"
+
+additional_build_steps:
+  prepend_base:
+    # Force pip to use the public PyPI index in case host-level mirrors are stale.
+    - ENV PIP_INDEX_URL=https://pypi.org/simple
+
+  prepend_builder:
+    # Ensure assemble/introspect run with Python 3.12 in builder stage.
+    - ENV PYCMD=/usr/bin/python3.12
+    # /output/scripts/assemble performs a large transitive pip resolution pass
+    # that includes pytfe>=0.1.5 from the collection metadata. Pre-download the
+    # pytfe wheel from PyPI and expose it via PIP_FIND_LINKS so that resolution
+    # can satisfy pytfe from a local wheel deterministically.
+    - RUN mkdir -p /tmp/pypi-wheels
+    - RUN /usr/bin/python3.12 -m pip download --no-deps --dest /tmp/pypi-wheels --index-url https://pypi.org/simple pytfe==1.0.0
+    - ENV PIP_FIND_LINKS=/tmp/pypi-wheels
+    - RUN echo 'pytfe==1.0.0' > /tmp/pip-constraints.txt
+    - ENV PIP_CONSTRAINT=/tmp/pip-constraints.txt
+
+  prepend_galaxy:
+    # Inject Hub token into build-stage ansible.cfg so explicit source URL in
+    # collections/requirements.yml can authenticate against rh-certified.
+    - ARG ANSIBLE_GALAXY_SERVER_RH_CERTIFIED_TOKEN
+    - RUN rm -f /tmp/galaxy_ansible.cfg && touch /tmp/galaxy_ansible.cfg
+    - RUN echo '[galaxy]' >> /tmp/galaxy_ansible.cfg
+    - RUN echo 'server_list = rh_certified, galaxy_public' >> /tmp/galaxy_ansible.cfg
+    - RUN echo 'ignore_certs = true' >> /tmp/galaxy_ansible.cfg
+    - RUN echo '' >> /tmp/galaxy_ansible.cfg
+    - RUN echo '[galaxy_server.rh_certified]' >> /tmp/galaxy_ansible.cfg
+    - RUN echo 'url = https://ec2-44-199-30-193.compute-1.amazonaws.com/api/galaxy/content/rh-certified/' >> /tmp/galaxy_ansible.cfg
+    - RUN echo "token = $ANSIBLE_GALAXY_SERVER_RH_CERTIFIED_TOKEN" >> /tmp/galaxy_ansible.cfg
+    - RUN echo 'validate_certs = false' >> /tmp/galaxy_ansible.cfg
+    - RUN echo '' >> /tmp/galaxy_ansible.cfg
+    - RUN echo '[galaxy_server.galaxy_public]' >> /tmp/galaxy_ansible.cfg
+    - RUN echo 'url = https://galaxy.ansible.com/api/' >> /tmp/galaxy_ansible.cfg
+    - ENV ANSIBLE_CONFIG=/tmp/galaxy_ansible.cfg
+
+  prepend_final:
+    # Ensure install-from-bindep installs Python deps with Python 3.12.
+    - ENV PYCMD=/usr/bin/python3.12
+
+  append_final:
+    # Make Python 3.12 the default runtime interpreter inside the EE.
+    - RUN ln -sf /usr/bin/python3.12 /usr/bin/python3
+
+options:
+  package_manager_path: /usr/bin/microdnf
