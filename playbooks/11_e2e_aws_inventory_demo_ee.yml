@@ -105,8 +105,8 @@
         configuration_version: "{{ tfc_configuration_version_id }}"
         run_message: "AAP integrated EE demo"
         poll: true
-        poll_interval: "{{ run_poll_interval_seconds }}"
-        poll_timeout: "{{ run_poll_timeout_seconds }}"
+        poll_interval: "{{ run_poll_interval_seconds | default(10, true) | int }}"
+        poll_timeout: "{{ run_poll_timeout_seconds | default(1800, true) | int }}"
         state: "present"
         <<: *auth
       register: planned
@@ -129,8 +129,8 @@
         run_id: "{{ tfc_run_id }}"
         state: applied
         poll: true
-        poll_interval: "{{ run_poll_interval_seconds }}"
-        poll_timeout: "{{ run_poll_timeout_seconds }}"
+        poll_interval: "{{ run_poll_interval_seconds | default(10, true) | int }}"
+        poll_timeout: "{{ run_poll_timeout_seconds | default(1800, true) | int }}"
         <<: *auth
       when:
         - tfc_run_status in ['planned', 'planned_and_finished', 'post_plan_completed', 'cost_estimated', 'policy_checked', 'confirmed']
