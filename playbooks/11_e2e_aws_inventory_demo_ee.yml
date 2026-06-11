@@ -13,6 +13,8 @@
   hosts: localhost
   gather_facts: false
   connection: local
+  collections:
+    - hashicorp.terraform
 
   vars:
     common_auth: &auth
@@ -44,9 +46,26 @@
         <<: *auth
       register: ws
 
+    - name: Read workspace details to get deterministic workspace id
+      hashicorp.terraform.workspace_info:
+        organization: "{{ tfc_organization }}"
+        workspace: "{{ new_workspace }}"
+        <<: *auth
+      register: ws_info
+
+    - name: Normalize workspace id from module response
+      ansible.builtin.set_fact:
+        tfc_workspace_id: "{{ ws_info.workspace.id if (ws_info.workspace is defined and ws_info.workspace.id is defined) else '' }}"
+
+    - name: Assert workspace id resolved
+      ansible.builtin.assert:
+        that:
+          - tfc_workspace_id | length > 0
+        fail_msg: "Unable to resolve workspace id from workspace module response."
+
     - name: Set terraform variables for demo workspace
       hashicorp.terraform.variable:
-        workspace_id: "{{ ws.workspace.id }}"
+        workspace_id: "{{ tfc_workspace_id }}"
         key: "{{ item.key }}"
         value: "{{ item.value }}"
         category: terraform
@@ -63,59 +82,87 @@
 
     - name: Upload Terraform config (AWS EC2 demo)
       hashicorp.terraform.configuration_version:
-        workspace_id: "{{ ws.workspace.id }}"
+        workspace_id: "{{ tfc_workspace_id }}"
         configuration_files_path: "{{ tf_config_dir | default(playbook_dir ~ '/../files/aws_ec2_demo_config') }}"
         auto_queue_runs: false
         state: present
         <<: *auth
       register: cv
 
+    - name: Normalize configuration version id from module response
+      ansible.builtin.set_fact:
+        tfc_configuration_version_id: "{{ cv.id if cv.id is defined else '' }}"
+
+    - name: Assert configuration version id resolved
+      ansible.builtin.assert:
+        that:
+          - tfc_configuration_version_id | length > 0
+        fail_msg: "Unable to resolve configuration version id from configuration_version module response."
+
     - name: Create run (plan)
       hashicorp.terraform.run:
-        workspace_id: "{{ ws.workspace.id }}"
-        configuration_version: "{{ cv.configuration_version.id }}"
+        workspace_id: "{{ tfc_workspace_id }}"
+        configuration_version: "{{ tfc_configuration_version_id }}"
         run_message: "AAP integrated EE demo"
-        plan_only: false
-        auto_apply: false
         poll: true
         poll_interval: "{{ run_poll_interval_seconds }}"
         poll_timeout: "{{ run_poll_timeout_seconds }}"
-        state: present
+        state: "present"
         <<: *auth
       register: planned
 
+    - name: Normalize run id and status from run module response
+      ansible.builtin.set_fact: 
+        tfc_run_id: "{{ planned.id }}"
+        tfc_run_status: "{{ planned.status }}"
+        tfc_run_has_changes: "{{ planned.has_changes }}"
+      when: planned is defined
+
+    - name: Assert run id resolved
+      ansible.builtin.assert:
+        that:
+          - tfc_run_id | length > 0
+        fail_msg: "Unable to resolve run id from run module response."
+
     - name: Apply run
       hashicorp.terraform.run:
-        run_id: "{{ planned.run.id }}"
+        run_id: "{{ tfc_run_id }}"
         state: applied
         poll: true
         poll_interval: "{{ run_poll_interval_seconds }}"
-        poll_timeout: 1800
+        poll_timeout: "{{ run_poll_timeout_seconds }}"
         <<: *auth
-      when: planned.run.attributes.status in ['planned', 'cost_estimated', 'policy_checked', 'post_plan_completed', 'confirmed']
+      when:
+        - tfc_run_status in ['planned', 'planned_and_finished', 'post_plan_completed', 'cost_estimated', 'policy_checked', 'confirmed']
+        - tfc_run_has_changes | bool
       register: applied
 
     - name: Read outputs
       hashicorp.terraform.output:
-        workspace_id: "{{ ws.workspace.id }}"
+        workspace_id: "{{ tfc_workspace_id }}"
         display_sensitive: false
         <<: *auth
       register: outs
+
+    - name: Normalize key outputs from output module response
+      ansible.builtin.set_fact:
+        tfc_instance_id: "{{ (outs.outputs | selectattr('name', 'equalto', 'instance_id') | map(attribute='value') | list | first) | default('n/a') }}"
+        tfc_public_ip: "{{ (outs.outputs | selectattr('name', 'equalto', 'public_ip') | map(attribute='value') | list | first) | default('n/a') }}"
 
     - name: Show key outputs for operators
       ansible.builtin.debug:
         msg:
           - "workspace={{ new_workspace }}"
-          - "run_id={{ planned.run.id }}"
-          - "instance_id={{ outs.outputs.instance_id.value | default('n/a') }}"
-          - "public_ip={{ outs.outputs.public_ip.value | default('n/a') }}"
+          - "run_id={{ tfc_run_id }}"
+          - "instance_id={{ tfc_instance_id }}"
+          - "public_ip={{ tfc_public_ip }}"
 
     - name: Expose workflow variables to downstream nodes
       ansible.builtin.set_stats:
         data:
           tfc_workspace: "{{ new_workspace }}"
-          tfc_workspace_id: "{{ ws.workspace.id }}"
-          tfc_run_id: "{{ planned.run.id }}"
-          tfc_configuration_version_id: "{{ cv.configuration_version.id }}"
+          tfc_workspace_id: "{{ tfc_workspace_id }}"
+          tfc_run_id: "{{ tfc_run_id }}"
+          tfc_configuration_version_id: "{{ tfc_configuration_version_id }}"
           demo_env_group: "env_{{ environment_tag | default('demo') }}"
           demo_role_group: "role_web"

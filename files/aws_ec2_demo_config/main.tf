@@ -8,7 +8,31 @@ terraform {
 }
 
 provider "aws" {
-  region = var.region
+  region     = var.region
+  access_key = var.aws_access_key_id != "" ? var.aws_access_key_id : null
+  secret_key = var.aws_secret_access_key != "" ? var.aws_secret_access_key : null
+  token      = var.aws_session_token != "" ? var.aws_session_token : null
+}
+
+variable "aws_access_key_id" {
+  type        = string
+  description = "AWS access key ID for HCP remote runs (optional if using env vars)"
+  default     = ""
+  sensitive   = true
+}
+
+variable "aws_secret_access_key" {
+  type        = string
+  description = "AWS secret access key for HCP remote runs (optional if using env vars)"
+  default     = ""
+  sensitive   = true
+}
+
+variable "aws_session_token" {
+  type        = string
+  description = "AWS session token for temporary credentials (optional)"
+  default     = ""
+  sensitive   = true
 }
 
 variable "region" {

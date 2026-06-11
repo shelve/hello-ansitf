@@ -22,3 +22,6 @@ __pycache__/
 
 # Ansible build artifacts.
 *.tar.gz
+
+# Local Ansible runtime artifacts occasionally created by ad-hoc commands/tools.
+.ansible/
