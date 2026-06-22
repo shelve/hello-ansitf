@@ -31,9 +31,14 @@
 #   docs/04-overriding-collection-from-git.md.
 
 collections:
+  # Temporarily installing from next-2.1.0 branch for feature testing.
+  # Revert to Hub source + pinned version when 2.1.0 is released:
+  #   version: "2.1.0"
+  #   source: https://ec2-44-199-30-193.compute-1.amazonaws.com/api/galaxy/content/rh-certified/
   - name: hashicorp.terraform
-    version: "2.0.0"
-    source: https://ec2-44-199-30-193.compute-1.amazonaws.com/api/galaxy/content/rh-certified/
+    type: git
+    source: https://github.com/hashicorp/terraform-ansible-collection.git
+    version: next-2.1.0
 
   # Public-Galaxy supporting collections — ansible-galaxy will find these on
   # `galaxy_public` (second in the server_list). We can leave the source

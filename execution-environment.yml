@@ -5,14 +5,17 @@
 #   - hashicorp.terraform from Private Automation Hub (rh-certified)
 #   - pytfe from PyPI
 #
-# Build:
-#   export ANSIBLE_GALAXY_SERVER_RH_CERTIFIED_TOKEN='<private-hub-api-token>'
+# Build (next-2.1.0 dev, no Hub token needed):
 #   docker login registry.redhat.io
 #   ansible-builder build \
-#     --tag aap-terraform-ee:2.0.0 \
+#     --tag aap-terraform-ee:2.1.0-dev \
 #     --container-runtime docker \
-#     --build-arg ANSIBLE_GALAXY_SERVER_RH_CERTIFIED_TOKEN="$ANSIBLE_GALAXY_SERVER_RH_CERTIFIED_TOKEN" \
 #     --no-cache
+#
+# Revert checklist when 2.1.0 ships:
+#   1. collections/requirements.yml: restore Hub source + version "2.1.0"
+#   2. execution-environment.yml: restore prepend_galaxy Hub token block
+#   3. Rebuild tagged aap-terraform-ee:2.1.0
 
 version: 3
 
@@ -54,18 +57,14 @@ additional_build_steps:
     - ENV PIP_CONSTRAINT=/tmp/pip-constraints.txt
 
   prepend_galaxy:
-    # Inject Hub token into build-stage ansible.cfg so explicit source URL in
-    # collections/requirements.yml can authenticate against rh-certified.
-    - ARG ANSIBLE_GALAXY_SERVER_RH_CERTIFIED_TOKEN
+    # hashicorp.terraform is now installed from the next-2.1.0 GitHub branch,
+    # so no Private Hub token is required. Only the public Galaxy fallback is
+    # needed for ansible.utils / community.general.
+    # Restore the full Hub token block when reverting to the released version.
     - RUN rm -f /tmp/galaxy_ansible.cfg && touch /tmp/galaxy_ansible.cfg
     - RUN echo '[galaxy]' >> /tmp/galaxy_ansible.cfg
-    - RUN echo 'server_list = rh_certified, galaxy_public' >> /tmp/galaxy_ansible.cfg
+    - RUN echo 'server_list = galaxy_public' >> /tmp/galaxy_ansible.cfg
     - RUN echo 'ignore_certs = true' >> /tmp/galaxy_ansible.cfg
-    - RUN echo '' >> /tmp/galaxy_ansible.cfg
-    - RUN echo '[galaxy_server.rh_certified]' >> /tmp/galaxy_ansible.cfg
-    - RUN echo 'url = https://ec2-44-199-30-193.compute-1.amazonaws.com/api/galaxy/content/rh-certified/' >> /tmp/galaxy_ansible.cfg
-    - RUN echo "token = $ANSIBLE_GALAXY_SERVER_RH_CERTIFIED_TOKEN" >> /tmp/galaxy_ansible.cfg
-    - RUN echo 'validate_certs = false' >> /tmp/galaxy_ansible.cfg
     - RUN echo '' >> /tmp/galaxy_ansible.cfg
     - RUN echo '[galaxy_server.galaxy_public]' >> /tmp/galaxy_ansible.cfg
     - RUN echo 'url = https://galaxy.ansible.com/api/' >> /tmp/galaxy_ansible.cfg

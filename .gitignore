@@ -23,5 +23,8 @@ __pycache__/
 # Ansible build artifacts.
 *.tar.gz
 
+# ansible-builder generated build context (reproducible from execution-environment.yml).
+context/
+
 # Local Ansible runtime artifacts occasionally created by ad-hoc commands/tools.
 .ansible/
