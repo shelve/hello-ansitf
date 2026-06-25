@@ -1,0 +1,277 @@
+---
+# playbooks/14_organization_tags.yml
+#
+# WORKFLOW: Organization tag lifecycle — create tags, associate workspaces,
+# list all org tags, and optionally delete using the 2.1.0+ module and
+# tf_org_tags lookup plugin.
+#
+# Modules / plugins covered:
+#   hashicorp.terraform.organization_tags  — create / associate / delete
+#   hashicorp.terraform.tf_org_tags        — lookup: list all org tags
+#
+# AAP Job Template survey vars (all optional; defaults shown):
+#   tag_name         (str)  Human-readable tag name (e.g. "env:prod").   [aap-demo-tag]
+#   tag_workspace_ids (str) Comma-separated workspace IDs to associate.  []
+#                           Leave blank to skip workspace association.
+#   cleanup          (bool) Delete the tag at end of the play.           [false]
+#
+# Auth: TFE_TOKEN env var (injected by the AAP TFE credential).
+#
+# Run locally:
+#   export TFE_TOKEN=<token>
+#   ansible-playbook playbooks/14_organization_tags.yml \
+#     -e tfc_organization=<org> \
+#     -e tag_name=env:prod \
+#     -e "tag_workspace_ids=ws-abc123,ws-def456"
+
+- name: Bootstrap pytfe (no-op when install_pytfe_at_runtime=false)
+  import_playbook: bootstrap_pytfe.yml
+
+- name: Organization tags lifecycle — create, associate, list, delete
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars:
+    common_auth: &auth
+      tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+
+    _tag_name: "{{ tag_name | default('aap-demo-tag') }}"
+    _cleanup:  "{{ cleanup  | default(false) | bool }}"
+
+    # Accept workspace IDs either as a YAML list (from playbook extra_vars)
+    # or as a comma-separated string (convenient for AAP surveys).
+    # Blank / undefined → empty list → association step is skipped.
+    _workspace_ids: >-
+      {{
+        tag_workspace_ids
+        | default('')
+        | string
+        | split(',')
+        | map('trim')
+        | reject('equalto', '')
+        | list
+        if (tag_workspace_ids | default('') | string) | length > 0
+        else []
+      }}
+
+  module_defaults:
+    group/hashicorp.terraform.terraform:
+      tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+
+  tasks:
+
+    # ------------------------------------------------------------------
+    # 1. List existing org tags (tf_org_tags lookup)
+    # ------------------------------------------------------------------
+    - name: List all existing organization tags
+      ansible.builtin.set_fact:
+        existing_tags: >-
+          {{
+            lookup(
+              'hashicorp.terraform.tf_org_tags',
+              organization=tfc_organization,
+              tfe_token=lookup('env', 'TFE_TOKEN')
+            )
+          }}
+
+    - name: Show existing tags
+      ansible.builtin.debug:
+        msg: >-
+          {{ existing_tags | length }} tag(s) currently in {{ tfc_organization }}:
+          {{ existing_tags | map(attribute='name') | list }}
+
+    # ------------------------------------------------------------------
+    # 2. Create the tag by name (idempotent — no-op if already exists)
+    #    When workspace IDs are provided: create + associate in one call.
+    #    When no workspace IDs: creation requires at least one workspace,
+    #    so we skip this step and note the tag needs workspace context.
+    # ------------------------------------------------------------------
+    - name: Show workspace association intent
+      ansible.builtin.debug:
+        msg: >-
+          {% if _workspace_ids | length > 0 %}
+          Will create/ensure tag "{{ _tag_name }}" and associate
+          workspace(s): {{ _workspace_ids | join(', ') }}
+          {% else %}
+          No workspace IDs provided — tag "{{ _tag_name }}" creation
+          requires at least one workspace_id. Pass -e tag_workspace_ids=ws-xxx
+          or fill the survey field to associate workspaces.
+          {% endif %}
+
+    - name: Create tag "{{ _tag_name }}" and associate workspaces
+      hashicorp.terraform.organization_tags:
+        organization: "{{ tfc_organization }}"
+        name:          "{{ _tag_name }}"
+        workspace_ids: "{{ _workspace_ids }}"
+        state: present
+        <<: *auth
+      register: tag_create
+      when: _workspace_ids | length > 0
+
+    - name: Show create result
+      ansible.builtin.debug:
+        msg:
+          changed:       "{{ tag_create.changed }}"
+          tag_id:        "{{ tag_create.id }}"
+          tag_name:      "{{ tag_create.name }}"
+          workspace_ids: "{{ tag_create.workspace_ids }}"
+      when: _workspace_ids | length > 0
+
+    - name: Pin tag ID
+      ansible.builtin.set_fact:
+        _tag_id: "{{ tag_create.id }}"
+      when: _workspace_ids | length > 0
+
+    # ------------------------------------------------------------------
+    # 3. Idempotency check — same call must be a no-op
+    # ------------------------------------------------------------------
+    - name: Re-apply same association (should not change)
+      hashicorp.terraform.organization_tags:
+        organization: "{{ tfc_organization }}"
+        name:          "{{ _tag_name }}"
+        workspace_ids: "{{ _workspace_ids }}"
+        state: present
+        <<: *auth
+      register: tag_idempotent
+      when: _workspace_ids | length > 0
+
+    - name: Assert no change on second apply
+      ansible.builtin.assert:
+        that:
+          - not tag_idempotent.changed
+        fail_msg: >-
+          organization_tags should not report changed on a re-apply of
+          the same workspace associations.
+      when: _workspace_ids | length > 0
+
+    # ------------------------------------------------------------------
+    # 4. Associate additional workspace via tag_id (use module's id path)
+    # ------------------------------------------------------------------
+    - name: Associate using tag_id (demonstrates id-based path)
+      hashicorp.terraform.organization_tags:
+        organization: "{{ tfc_organization }}"
+        tag_id:        "{{ _tag_id }}"
+        workspace_ids: "{{ _workspace_ids }}"
+        state: present
+        <<: *auth
+      register: tag_by_id
+      when:
+        - _tag_id is defined
+        - _workspace_ids | length > 0
+
+    - name: Show tag_id-based result
+      ansible.builtin.debug:
+        msg:
+          changed:       "{{ tag_by_id.changed }}"
+          tag_id:        "{{ tag_by_id.id }}"
+          workspace_ids: "{{ tag_by_id.workspace_ids }}"
+      when:
+        - _tag_id is defined
+        - _workspace_ids | length > 0
+
+    # ------------------------------------------------------------------
+    # 5. List org tags filtered by name (tf_org_tags lookup with query)
+    # ------------------------------------------------------------------
+    - name: Query org tags filtered by "{{ _tag_name }}"
+      ansible.builtin.set_fact:
+        queried_tags: >-
+          {{
+            lookup(
+              'hashicorp.terraform.tf_org_tags',
+              organization=tfc_organization,
+              query=_tag_name,
+              tfe_token=lookup('env', 'TFE_TOKEN')
+            )
+          }}
+      when: _tag_id is defined
+
+    - name: Show filtered tag lookup result
+      ansible.builtin.debug:
+        msg: >-
+          Query "{{ _tag_name }}" returned {{ queried_tags | length }} tag(s):
+          {{ queried_tags | map(attribute='name') | list }}
+      when: _tag_id is defined
+
+    # ------------------------------------------------------------------
+    # 6. Confirm our tag is present in the full org tag list
+    # ------------------------------------------------------------------
+    - name: Re-list all org tags and confirm our tag is present
+      ansible.builtin.set_fact:
+        final_tags: >-
+          {{
+            lookup(
+              'hashicorp.terraform.tf_org_tags',
+              organization=tfc_organization,
+              tfe_token=lookup('env', 'TFE_TOKEN')
+            )
+          }}
+      when: _tag_id is defined
+
+    - name: Assert our tag appears in the organization
+      ansible.builtin.assert:
+        that:
+          - final_tags | selectattr('id', 'equalto', _tag_id) | list | length == 1
+        fail_msg: >-
+          Tag {{ _tag_id }} ({{ _tag_name }}) not found in org tag listing.
+      when: _tag_id is defined
+
+    # ------------------------------------------------------------------
+    # 7. Check-mode delete (dry-run — confirm it would change, nothing deleted)
+    # ------------------------------------------------------------------
+    - name: Check-mode delete (dry-run, no actual deletion)
+      hashicorp.terraform.organization_tags:
+        organization: "{{ tfc_organization }}"
+        tag_id: "{{ _tag_id }}"
+        state:  absent
+        <<: *auth
+      check_mode: true
+      register: tag_check_delete
+      when: _tag_id is defined
+
+    - name: Show check-mode result
+      ansible.builtin.debug:
+        msg: "check_mode would change={{ tag_check_delete.changed }}; msg={{ tag_check_delete.msg }}"
+      when: _tag_id is defined
+
+    # ------------------------------------------------------------------
+    # 8. Cleanup (only when cleanup=true)
+    # ------------------------------------------------------------------
+    - name: Delete tag "{{ _tag_name }}" (cleanup={{ _cleanup }})
+      hashicorp.terraform.organization_tags:
+        organization: "{{ tfc_organization }}"
+        tag_id: "{{ _tag_id }}"
+        state:  absent
+        <<: *auth
+      register: tag_delete
+      when:
+        - _cleanup | bool
+        - _tag_id is defined
+
+    - name: Show delete result
+      ansible.builtin.debug:
+        msg: "Tag {{ _tag_name }} ({{ _tag_id }}) deleted: {{ tag_delete.msg }}"
+      when:
+        - _cleanup | bool
+        - _tag_id is defined
+        - tag_delete.changed
+
+    - name: Idempotency — delete again (should be no-op)
+      hashicorp.terraform.organization_tags:
+        organization: "{{ tfc_organization }}"
+        tag_id: "{{ _tag_id }}"
+        state:  absent
+        <<: *auth
+      register: tag_delete_again
+      when:
+        - _cleanup | bool
+        - _tag_id is defined
+
+    - name: Assert repeated delete is a no-op
+      ansible.builtin.assert:
+        that:
+          - not tag_delete_again.changed
+        fail_msg: "Deleting an already-absent tag must not report changed."
+      when:
+        - _cleanup | bool
+        - _tag_id is defined

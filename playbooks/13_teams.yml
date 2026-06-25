@@ -1,0 +1,187 @@
+---
+# playbooks/13_teams.yml
+#
+# WORKFLOW: Team lifecycle — create, read, update, and delete teams in
+# Terraform Cloud/Enterprise using the 2.1.0+ team and team_info modules.
+#
+# Modules covered:
+#   hashicorp.terraform.team       — create / update / delete
+#   hashicorp.terraform.team_info  — read by ID, by name, or list all
+#
+# AAP Job Template survey vars (all optional; defaults shown):
+#   team_name        (str)  Name of the team to manage.             [aap-demo-team]
+#   team_visibility  (str)  "secret" or "organization".             [secret]
+#   allow_token_mgmt (bool) Members can manage their own tokens.    [false]
+#   cleanup          (bool) Delete the team at end of the play.     [false]
+#
+# Auth: TFE_TOKEN env var (injected by the AAP TFE credential).
+#
+# Run locally:
+#   export TFE_TOKEN=<token>
+#   ansible-playbook playbooks/13_teams.yml \
+#     -e tfc_organization=<org> \
+#     -e team_name=my-test-team
+
+- name: Bootstrap pytfe (no-op when install_pytfe_at_runtime=false)
+  import_playbook: bootstrap_pytfe.yml
+
+- name: Team lifecycle — create, read, update, delete
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars:
+    common_auth: &auth
+      tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+
+    _team_name:        "{{ team_name        | default('aap-demo-team') }}"
+    _team_visibility:  "{{ team_visibility  | default('secret') }}"
+    _allow_token_mgmt: "{{ allow_token_mgmt | default(false) | bool }}"
+    _cleanup:          "{{ cleanup          | default(false) | bool }}"
+
+  module_defaults:
+    group/hashicorp.terraform.terraform:
+      tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+
+  tasks:
+
+    # ------------------------------------------------------------------
+    # 1. List all teams in the organization (team_info with org only)
+    # ------------------------------------------------------------------
+    - name: List all teams in the organization
+      hashicorp.terraform.team_info:
+        organization: "{{ tfc_organization }}"
+        <<: *auth
+      register: teams_list
+
+    - name: Show existing teams
+      ansible.builtin.debug:
+        msg: >-
+          Found {{ teams_list.teams | length }} team(s) in
+          {{ tfc_organization }}: {{ teams_list.teams | map(attribute='name') | list }}
+
+    # ------------------------------------------------------------------
+    # 2. Create the team (idempotent — updates if it already exists)
+    # ------------------------------------------------------------------
+    - name: Create / ensure team "{{ _team_name }}"
+      hashicorp.terraform.team:
+        name:                         "{{ _team_name }}"
+        organization:                 "{{ tfc_organization }}"
+        visibility:                   "{{ _team_visibility }}"
+        allow_member_token_management: "{{ _allow_token_mgmt }}"
+        organization_access:
+          manage_workspaces: true
+          read_workspaces:   true
+          read_projects:     true
+        state: present
+        <<: *auth
+      register: team_create
+
+    - name: Show create result
+      ansible.builtin.debug:
+        msg:
+          changed:    "{{ team_create.changed }}"
+          team_id:    "{{ team_create.id }}"
+          team_name:  "{{ team_create.name }}"
+          visibility: "{{ team_create.visibility }}"
+          user_count: "{{ team_create.user_count }}"
+
+    - name: Pin team ID for subsequent tasks
+      ansible.builtin.set_fact:
+        _team_id: "{{ team_create.id }}"
+
+    # ------------------------------------------------------------------
+    # 3. Read team info by ID
+    # ------------------------------------------------------------------
+    - name: Read team info by ID
+      hashicorp.terraform.team_info:
+        team_id: "{{ _team_id }}"
+        <<: *auth
+      register: team_info_by_id
+
+    - name: Show team info
+      ansible.builtin.debug:
+        var: team_info_by_id.team
+
+    # ------------------------------------------------------------------
+    # 4. Look up the same team by name (organization + name)
+    # ------------------------------------------------------------------
+    - name: Look up team by name
+      hashicorp.terraform.team_info:
+        organization: "{{ tfc_organization }}"
+        name:         "{{ _team_name }}"
+        <<: *auth
+      register: team_info_by_name
+
+    - name: Confirm name-lookup returns the same ID
+      ansible.builtin.assert:
+        that:
+          - team_info_by_name.team.id == _team_id
+        fail_msg: >-
+          Name lookup returned ID {{ team_info_by_name.team.id }};
+          expected {{ _team_id }}.
+
+    # ------------------------------------------------------------------
+    # 5. Update — flip visibility and add project management permissions
+    # ------------------------------------------------------------------
+    - name: >-
+        Update team visibility to "organization" and extend org access
+      hashicorp.terraform.team:
+        team_id:                       "{{ _team_id }}"
+        visibility:                    "organization"
+        allow_member_token_management: true
+        organization_access:
+          manage_workspaces:  true
+          read_workspaces:    true
+          read_projects:      true
+          manage_projects:    true
+        state: present
+        <<: *auth
+      register: team_update
+
+    - name: Show update result
+      ansible.builtin.debug:
+        msg:
+          changed:               "{{ team_update.changed }}"
+          visibility:            "{{ team_update.visibility }}"
+          allow_token_mgmt:      "{{ team_update.allow_member_token_management }}"
+          organization_access:   "{{ team_update.organization_access }}"
+
+    # ------------------------------------------------------------------
+    # 6. Idempotency check — same call must not report changed
+    # ------------------------------------------------------------------
+    - name: Re-apply identical settings (should not change)
+      hashicorp.terraform.team:
+        team_id:                       "{{ _team_id }}"
+        visibility:                    "organization"
+        allow_member_token_management: true
+        organization_access:
+          manage_workspaces:  true
+          read_workspaces:    true
+          read_projects:      true
+          manage_projects:    true
+        state: present
+        <<: *auth
+      register: team_idempotent
+
+    - name: Assert no change on second apply
+      ansible.builtin.assert:
+        that:
+          - not team_idempotent.changed
+        fail_msg: "Team should not have changed — idempotency broken."
+
+    # ------------------------------------------------------------------
+    # 7. Cleanup (only when cleanup=true survey var is set)
+    # ------------------------------------------------------------------
+    - name: Delete team "{{ _team_name }}" (cleanup={{ _cleanup }})
+      hashicorp.terraform.team:
+        team_id: "{{ _team_id }}"
+        state:   absent
+        <<: *auth
+      register: team_delete
+      when: _cleanup | bool
+
+    - name: Show delete result
+      ansible.builtin.debug:
+        msg: "Team {{ _team_name }} ({{ _team_id }}) deleted."
+      when: _cleanup | bool and team_delete.changed
